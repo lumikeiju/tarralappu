@@ -2,5 +2,12 @@
 export default {
   endOfLine: "crlf",
   proseWrap: "never",
-  trailingComma: "none"
+  trailingComma: "none",
+  plugins: ["prettier-plugin-svelte"],
+  overrides: [
+    {
+      files: "*.svelte",
+      options: { parser: "svelte" }
+    }
+  ]
 };

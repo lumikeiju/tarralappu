@@ -1,15 +1,30 @@
 {
-  "name": "peruskivi",
+  "name": "tarralappu",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "Sticky-note harness for AI image generation via OpenRouter",
   "packageManager": "bun@1.3.13",
   "scripts": {
+    "dev": "vite",
+    "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
+  "dependencies": {
+    "idb": "^8.0.3",
+    "svelte": "^5.56.3"
+  },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tsconfig/svelte": "^5.0.8",
     "@types/bun": "^1.3.14",
-    "prettier": "^3.8.3"
+    "prettier": "^3.8.4",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte-check": "^4.6.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }

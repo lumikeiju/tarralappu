@@ -6,7 +6,11 @@ Single source of truth for repository conventions. Read before editing.
 
 ## Repo identity
 
-**Peruskivi** is a starter template for Lumikeiju's new project repositories. It ships scaffolding (license, formatting, editor config, AI agent customization, CI config, boilerplate docs) and no tech stack. The cloned project picks the stack.
+**Tarralappu** (`tarralappu`) is a sticky-note-themed harness for AI image generation via OpenRouter. Single-page static app (Vite + Svelte 5 + TypeScript), deployed as a standalone GitHub Pages site at `lumikeiju.dev/tarralappu/`.
+
+Surface type: **standalone / external**. The apex registers it as `external`; do not enable any conflicting GitHub Pages setup.
+
+Implementation spec: [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## Apex vs standalone
 
