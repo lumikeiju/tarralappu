@@ -27,7 +27,10 @@ import type {
   SketchStatus
 } from "../db/schema";
 import { newId } from "../util/id";
-import { listImageModels } from "../openrouter/client";
+import {
+  listImageModels,
+  listImageModelCapabilities
+} from "../openrouter/client";
 import {
   resolveAllCapabilities,
   PINNED_MODEL_IDS
@@ -154,8 +157,17 @@ export async function loadAvailableModels(): Promise<void> {
   boardState.modelsLoading = true;
   boardState.modelsError = null;
   try {
-    const res = await listImageModels();
-    boardState.availableModels = resolveAllCapabilities(res.data);
+    const [res, discovery] = await Promise.all([
+      listImageModels(),
+      // Real capability data (aspect ratios, sizes, max input images) from
+      // OpenRouter's dedicated Image API. Best-effort: if it fails, fall
+      // back to conservative per-model defaults marked "estimated".
+      listImageModelCapabilities().catch(() => ({ data: [] }))
+    ]);
+    boardState.availableModels = resolveAllCapabilities(
+      res.data,
+      discovery.data
+    );
   } catch (e) {
     boardState.modelsError = e instanceof Error ? e.message : String(e);
   } finally {

@@ -1,207 +1,18 @@
-import type { RawModel, ModelCapabilities } from "./types";
+import type {
+  RawModel,
+  ModelCapabilities,
+  ImageModelDiscoveryEntry,
+  ParameterDescriptor
+} from "./types";
 
-const DEFAULT_ASPECT_RATIOS = [
-  "1:1",
-  "2:3",
-  "3:2",
-  "3:4",
-  "4:3",
-  "4:5",
-  "5:4",
-  "9:16",
-  "16:9",
-  "21:9"
-];
-const DEFAULT_IMAGE_SIZES = ["1K", "2K", "4K"];
+// Conservative fallback used only when discovery data is unavailable for a
+// model (e.g. the /images/models fetch failed, or a brand-new model isn't
+// indexed there yet). Real values normally come from resolveCapabilities'
+// `discovery` argument below.
+const FALLBACK_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
+const FALLBACK_IMAGE_SIZES = ["1K"];
 
-type CapOverride = {
-  conversational?: boolean;
-  maxInputImages?: number;
-  aspectRatios?: string[];
-  imageSizes?: string[];
-  supportsImageConfig?: boolean;
-};
-
-// Family prefix → override (first match wins, more specific first)
-const FAMILY_OVERRIDES: Array<{ prefix: string; caps: CapOverride }> = [
-  {
-    prefix: "google/gemini",
-    caps: {
-      conversational: true,
-      maxInputImages: 16,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: ["0.5K", "1K", "2K", "4K"],
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "black-forest-labs/flux",
-    caps: {
-      conversational: false,
-      maxInputImages: 1,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: DEFAULT_IMAGE_SIZES,
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "microsoft/mai-image",
-    caps: {
-      conversational: false,
-      maxInputImages: 1,
-      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
-      imageSizes: ["1K"],
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "openai/gpt",
-    caps: {
-      conversational: true,
-      maxInputImages: 10,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: DEFAULT_IMAGE_SIZES,
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "openai/",
-    caps: {
-      conversational: true,
-      maxInputImages: 10,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: DEFAULT_IMAGE_SIZES,
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "recraft/",
-    caps: {
-      conversational: false,
-      maxInputImages: 1,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: ["1K", "2K"],
-      supportsImageConfig: true
-    }
-  },
-  {
-    prefix: "sourceful/",
-    caps: {
-      conversational: false,
-      maxInputImages: 1,
-      aspectRatios: DEFAULT_ASPECT_RATIOS,
-      imageSizes: DEFAULT_IMAGE_SIZES,
-      supportsImageConfig: true
-    }
-  }
-];
-
-// Extended aspect-ratio set shared by Gemini 3.x image models
-const GEMINI_3X_ASPECT_RATIOS = [
-  "1:1",
-  "2:3",
-  "3:2",
-  "3:4",
-  "4:3",
-  "4:5",
-  "5:4",
-  "9:16",
-  "16:9",
-  "21:9",
-  "1:4",
-  "4:1",
-  "1:8",
-  "8:1"
-];
-
-// Exact model ID → override (wins over family prefix)
-const MODEL_OVERRIDES: Record<string, CapOverride> = {
-  // ── Google Gemini image models ───────────────────────────────────────────
-  // Stable (non-preview) versions of Gemini 3.x support the same
-  // extended aspect ratios as their preview counterparts.
-  "google/gemini-3-pro-image": {
-    conversational: true,
-    maxInputImages: 16,
-    aspectRatios: GEMINI_3X_ASPECT_RATIOS,
-    imageSizes: ["0.5K", "1K", "2K", "4K"],
-    supportsImageConfig: true
-  },
-  "google/gemini-3.1-flash-image": {
-    conversational: true,
-    maxInputImages: 16,
-    aspectRatios: GEMINI_3X_ASPECT_RATIOS,
-    imageSizes: ["0.5K", "1K", "2K", "4K"],
-    supportsImageConfig: true
-  },
-  // Preview variants kept for backward compat
-  "google/gemini-3-pro-image-preview": {
-    conversational: true,
-    maxInputImages: 16,
-    aspectRatios: GEMINI_3X_ASPECT_RATIOS,
-    imageSizes: ["0.5K", "1K", "2K", "4K"],
-    supportsImageConfig: true
-  },
-  "google/gemini-3.1-flash-image-preview": {
-    conversational: true,
-    maxInputImages: 16,
-    aspectRatios: GEMINI_3X_ASPECT_RATIOS,
-    imageSizes: ["0.5K", "1K", "2K", "4K"],
-    supportsImageConfig: true
-  },
-
-  // ── FLUX.2 models ───────────────────────────────────────────────────────
-  // BFL supports multi-reference editing; max images per their docs:
-  //   [pro] / [max] / [flex] → 8 refs via API
-  //   [klein] 4B            → 4 refs
-  // Max output resolution: ~4 MP → 2K (2048 px) is the practical ceiling.
-  "black-forest-labs/flux.2-pro": {
-    conversational: false,
-    maxInputImages: 8,
-    aspectRatios: DEFAULT_ASPECT_RATIOS,
-    imageSizes: ["1K", "2K"],
-    supportsImageConfig: true
-  },
-  "black-forest-labs/flux.2-max": {
-    conversational: false,
-    maxInputImages: 8,
-    aspectRatios: DEFAULT_ASPECT_RATIOS,
-    imageSizes: ["1K", "2K"],
-    supportsImageConfig: true
-  },
-  "black-forest-labs/flux.2-flex": {
-    conversational: false,
-    maxInputImages: 8,
-    aspectRatios: DEFAULT_ASPECT_RATIOS,
-    imageSizes: ["1K", "2K"],
-    supportsImageConfig: true
-  },
-  "black-forest-labs/flux.2-klein-4b": {
-    conversational: false,
-    maxInputImages: 4,
-    aspectRatios: DEFAULT_ASPECT_RATIOS,
-    imageSizes: ["1K", "2K"],
-    supportsImageConfig: true
-  },
-
-  // ── Microsoft MAI-Image ──────────────────────────────────────────────────
-  "microsoft/mai-image-2.5": {
-    conversational: false,
-    maxInputImages: 1,
-    aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
-    imageSizes: ["1K"],
-    supportsImageConfig: true
-  },
-  "openai/gpt-5.4-image-2": {
-    conversational: true,
-    maxInputImages: 10,
-    aspectRatios: DEFAULT_ASPECT_RATIOS,
-    imageSizes: ["1K", "2K"],
-    supportsImageConfig: true
-  }
-};
-
-/** Model IDs pinned at the top of the picker (display order).
- *  Matches the 10 models the user has selected; preview variants excluded. */
+/** Model IDs pinned at the top of the picker (display order). */
 export const PINNED_MODEL_IDS = [
   // Google Gemini image models (newest → oldest)
   "google/gemini-3-pro-image",
@@ -210,6 +21,8 @@ export const PINNED_MODEL_IDS = [
   // OpenAI GPT image models
   "openai/gpt-5-image-mini",
   "openai/gpt-5.4-image-2",
+  // ByteDance Seedream
+  "bytedance-seed/seedream-4.5",
   // FLUX.2 family (alphabetical within family)
   "black-forest-labs/flux.2-flex",
   "black-forest-labs/flux.2-klein-4b",
@@ -219,37 +32,62 @@ export const PINNED_MODEL_IDS = [
   "microsoft/mai-image-2.5"
 ];
 
-function resolveOverride(id: string): CapOverride | null {
-  if (MODEL_OVERRIDES[id]) return MODEL_OVERRIDES[id];
-  for (const { prefix, caps } of FAMILY_OVERRIDES) {
-    if (id.startsWith(prefix)) return caps;
-  }
-  return null;
+function enumValues(desc: ParameterDescriptor | undefined): string[] | null {
+  return desc?.type === "enum" ? desc.values : null;
 }
 
-export function resolveCapabilities(model: RawModel): ModelCapabilities {
-  const override = resolveOverride(model.id);
+function rangeMax(desc: ParameterDescriptor | undefined): number | null {
+  return desc?.type === "range" ? desc.max : null;
+}
+
+/**
+ * Resolve capabilities for a model, preferring authoritative data from
+ * OpenRouter's dedicated Image API discovery endpoint
+ * (`GET /api/v1/images/models`, see
+ * https://openrouter.ai/blog/announcements/image-api/) over guesswork.
+ *
+ * `discovery` is the matching entry for this model ID, or undefined if the
+ * discovery fetch failed or the model isn't listed there — in that case we
+ * fall back to conservative defaults and mark the result `estimated`.
+ */
+export function resolveCapabilities(
+  model: RawModel,
+  discovery: ImageModelDiscoveryEntry | undefined
+): ModelCapabilities {
   const outputModalities = (model.architecture?.output_modalities ?? []).filter(
     (m): m is "image" | "text" => m === "image" || m === "text"
   );
-  const inferConversational = outputModalities.includes("text");
+  // The discovery API doesn't have its own "conversational" concept — this
+  // app's meaning (does the model support a multi-turn chat thread with
+  // images) maps directly to whether it emits text output alongside images.
+  const conversational = outputModalities.includes("text");
+
+  const params = discovery?.supported_parameters;
+  const aspectRatios =
+    enumValues(params?.aspect_ratio) ??
+    (discovery ? [] : FALLBACK_ASPECT_RATIOS);
+  const imageSizes =
+    enumValues(params?.resolution) ?? (discovery ? [] : FALLBACK_IMAGE_SIZES);
+  const maxInputImages = rangeMax(params?.input_references) ?? 1;
 
   return {
     id: model.id,
     name: model.name,
     outputModalities,
-    conversational: override?.conversational ?? inferConversational,
-    maxInputImages: override?.maxInputImages ?? 1,
-    aspectRatios: override?.aspectRatios ?? DEFAULT_ASPECT_RATIOS,
-    imageSizes: override?.imageSizes ?? DEFAULT_IMAGE_SIZES,
-    supportsImageConfig: override?.supportsImageConfig ?? true,
-    estimated: override === null,
+    conversational,
+    maxInputImages,
+    aspectRatios,
+    imageSizes,
+    supportsImageConfig: aspectRatios.length > 0 || imageSizes.length > 0,
+    estimated: discovery === undefined,
     pricing: model.pricing
   };
 }
 
 export function resolveAllCapabilities(
-  models: RawModel[]
+  models: RawModel[],
+  discoveryEntries: ImageModelDiscoveryEntry[]
 ): ModelCapabilities[] {
-  return models.map(resolveCapabilities);
+  const byId = new Map(discoveryEntries.map((d) => [d.id, d]));
+  return models.map((m) => resolveCapabilities(m, byId.get(m.id)));
 }

@@ -1,7 +1,8 @@
 import type {
   CompletionRequest,
   CompletionResponse,
-  ModelListResponse
+  ModelListResponse,
+  ImageModelDiscoveryResponse
 } from "./types";
 
 const BASE = "https://openrouter.ai/api/v1";
@@ -20,6 +21,27 @@ export async function listImageModels(
   });
   if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
   return res.json() as Promise<ModelListResponse>;
+}
+
+/**
+ * Real per-model capability descriptors from OpenRouter's dedicated Image API
+ * (public, no key required). Used to replace guessed aspect ratios/sizes/
+ * input-image caps with authoritative data. See
+ * https://openrouter.ai/blog/announcements/image-api/
+ */
+export async function listImageModelCapabilities(
+  signal?: AbortSignal
+): Promise<ImageModelDiscoveryResponse> {
+  const res = await fetch(`${BASE}/images/models`, {
+    signal,
+    headers: {
+      "HTTP-Referer": SITE_URL,
+      "X-Title": SITE_NAME
+    }
+  });
+  if (!res.ok)
+    throw new Error(`Failed to fetch image model capabilities: ${res.status}`);
+  return res.json() as Promise<ImageModelDiscoveryResponse>;
 }
 
 export async function chatCompletion(
