@@ -12,13 +12,19 @@
         imageSize: string;
         reasoningEffort: "low" | "medium" | "high" | null;
         capabilities: ModelCapabilities | undefined;
-        onChange: (ar: string, sz: string, re: "low" | "medium" | "high" | null) => void;
+        onChange: (
+            ar: string,
+            sz: string,
+            re: "low" | "medium" | "high" | null
+        ) => void;
     } = $props();
 
     const aspectRatios = $derived(capabilities?.aspectRatios ?? ["1:1"]);
     const imageSizes = $derived(capabilities?.imageSizes ?? ["1K"]);
     const show = $derived(capabilities?.supportsImageConfig ?? false);
-    const isReasoningModel = $derived(capabilities?.id === "openai/gpt-5.4-image-2");
+    const isReasoningModel = $derived(
+        capabilities?.id === "openai/gpt-5.4-image-2"
+    );
 </script>
 
 {#if show}
@@ -28,7 +34,11 @@
             <select
                 value={aspectRatio}
                 onchange={(e) =>
-                    onChange((e.target as HTMLSelectElement).value, imageSize, reasoningEffort)}
+                    onChange(
+                        (e.target as HTMLSelectElement).value,
+                        imageSize,
+                        reasoningEffort
+                    )}
                 aria-label="Aspect ratio"
             >
                 {#each aspectRatios as ar (ar)}
@@ -65,7 +75,9 @@
                         onChange(
                             aspectRatio,
                             imageSize,
-                            val === "none" ? null : (val as "low" | "medium" | "high")
+                            val === "none"
+                                ? null
+                                : (val as "low" | "medium" | "high")
                         );
                     }}
                     aria-label="Reasoning effort"

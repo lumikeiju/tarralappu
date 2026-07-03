@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.2.0 (2026-07-03)
+
+### Features
+
+- Model capabilities (aspect ratios, image sizes, max input reference images) are now resolved from OpenRouter's dedicated Image API discovery endpoint (`GET /api/v1/images/models`) instead of hand-guessed overrides, per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/). Generation still goes through `/chat/completions`; only capability discovery changed. Falls back to conservative defaults (marked "estimated") if the discovery fetch fails.
+
 ## v1.1.0 (2026-07-03)
 
 ### Features

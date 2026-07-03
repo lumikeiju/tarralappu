@@ -26,6 +26,32 @@ export interface ModelListResponse {
   data: RawModel[];
 }
 
+// Image API model discovery — GET /api/v1/images/models
+// https://openrouter.ai/blog/announcements/image-api/
+export type ParameterDescriptor =
+  | { type: "enum"; values: string[] }
+  | { type: "range"; min: number; max: number }
+  | { type: "boolean" };
+
+export type ImageModelSupportedParameters = Record<string, ParameterDescriptor>;
+
+export interface ImageModelDiscoveryEntry {
+  id: string;
+  name: string;
+  description?: string;
+  architecture: {
+    input_modalities: string[];
+    output_modalities: string[];
+  };
+  supported_parameters: ImageModelSupportedParameters;
+  supports_streaming: boolean;
+  endpoints: string;
+}
+
+export interface ImageModelDiscoveryResponse {
+  data: ImageModelDiscoveryEntry[];
+}
+
 // Resolved capabilities (merged from API + overrides)
 export interface ModelCapabilities {
   id: string;
