@@ -7,10 +7,16 @@
     import ReferenceImages from "./components/ReferenceImages.svelte";
     import SessionCapPanel from "./components/SessionCapPanel.svelte";
     import NotePanel from "./components/NotePanel.svelte";
+    import PromptBoard from "./components/PromptBoard.svelte";
     import Board from "./components/Board.svelte";
 
     let ready = $state(false);
     let authoringOpen = $state(true);
+    let promptBoardOpen = $state(false);
+
+    const promptNoteCount = $derived(
+        boardState.board?.settings.promptNotes?.length ?? 0
+    );
 
     // Apply theme to <html> whenever setting changes
     $effect(() => {
@@ -67,6 +73,26 @@
                 <NotePanel color="blue">
                     <SessionCapPanel />
                 </NotePanel>
+            </div>
+        </details>
+
+        <!-- Prompt board: scratchpad notes for drafting/copying prompts -->
+        <details
+            class="authoring-panel"
+            bind:open={promptBoardOpen}
+            aria-label="Prompt board panel"
+        >
+            <summary class="authoring-toggle">
+                Prompt Board
+                <span class="authoring-toggle__hint">
+                    {promptNoteCount === 0
+                        ? "No notes yet"
+                        : `${promptNoteCount} note${promptNoteCount === 1 ? "" : "s"}`}
+                </span>
+            </summary>
+
+            <div class="prompt-board-body">
+                <PromptBoard />
             </div>
         </details>
 
@@ -142,6 +168,9 @@
         .authoring-body {
             grid-template-columns: 1fr;
         }
+    }
+    .prompt-board-body {
+        padding: 0 20px 24px;
     }
     .loading-screen {
         display: flex;

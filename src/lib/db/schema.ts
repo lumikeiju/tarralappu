@@ -2,6 +2,12 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 export type ID = string;
 
+/** A single free-text scratchpad note on the "Prompt Board" shelf. */
+export interface PromptNote {
+  id: ID;
+  text: string;
+}
+
 export interface BoardSettings {
   defaultModelId: string | null;
   styleDoc: string;
@@ -10,6 +16,7 @@ export interface BoardSettings {
   sessionCostCapUsd: number | null;
   defaultAspectRatio: string;
   defaultImageSize: string;
+  promptNotes: PromptNote[];
 }
 
 export interface Board {
@@ -150,7 +157,8 @@ export function defaultBoardSettings(): BoardSettings {
     layoutRefImageId: null,
     sessionCostCapUsd: null,
     defaultAspectRatio: "1:1",
-    defaultImageSize: "1K"
+    defaultImageSize: "1K",
+    promptNotes: []
   };
 }
 

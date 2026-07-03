@@ -168,6 +168,35 @@ export async function updateBoardSettings(
   await saveBoard(JSON.parse(JSON.stringify(boardState.board)));
 }
 
+// ── Prompt board (scratchpad notes) ──────────────────────────────────────────
+
+/** Add a new blank prompt note to the Prompt Board shelf. */
+export async function addPromptNote(): Promise<void> {
+  const board = boardState.board;
+  if (!board) return;
+  if (!board.settings.promptNotes) board.settings.promptNotes = [];
+  board.settings.promptNotes.push({ id: newId(), text: "" });
+  await saveBoard(JSON.parse(JSON.stringify(board)));
+}
+
+export async function updatePromptNote(id: ID, text: string): Promise<void> {
+  const board = boardState.board;
+  if (!board) return;
+  const note = board.settings.promptNotes?.find((n) => n.id === id);
+  if (!note) return;
+  note.text = text;
+  await saveBoard(JSON.parse(JSON.stringify(board)));
+}
+
+export async function removePromptNote(id: ID): Promise<void> {
+  const board = boardState.board;
+  if (!board) return;
+  board.settings.promptNotes = (board.settings.promptNotes ?? []).filter(
+    (n) => n.id !== id
+  );
+  await saveBoard(JSON.parse(JSON.stringify(board)));
+}
+
 // ── Chain mutations ──────────────────────────────────────────────────────────
 
 export async function createChain(modelId: string): Promise<Chain> {
