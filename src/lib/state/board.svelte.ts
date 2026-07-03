@@ -39,6 +39,7 @@ import type { ModelCapabilities } from "../openrouter/types";
 import {
   chatCompletion,
   humanizeError,
+  rawErrorDetails,
   fetchGenerationCost
 } from "../openrouter/client";
 import { composeRequest } from "../openrouter/compose";
@@ -237,6 +238,7 @@ export async function createRootSketch(
     reasoningEffort: null,
     status: "draft",
     error: null,
+    errorRaw: null,
     costEstimateUsd: null,
     costActualUsd: null,
     resultImageIds: [],
@@ -276,6 +278,7 @@ export async function createRefinementSketch(
     reasoningEffort: parent.reasoningEffort,
     status: "draft",
     error: null,
+    errorRaw: null,
     costEstimateUsd: null,
     costActualUsd: null,
     resultImageIds: [],
@@ -307,7 +310,11 @@ export function submitSketch(sketchId: ID): void {
   if (!sketch || (sketch.status !== "draft" && sketch.status !== "error"))
     return;
 
-  void updateSketch(sketchId, { status: "queued", error: null });
+  void updateSketch(sketchId, {
+    status: "queued",
+    error: null,
+    errorRaw: null
+  });
 
   queue.enqueue({
     id: sketchId,
@@ -327,7 +334,11 @@ async function runGeneration(
   if (!board) return;
   const apiKey = auth.apiKey;
   if (!apiKey) {
-    await updateSketch(sketchId, { status: "error", error: "No API key set." });
+    await updateSketch(sketchId, {
+      status: "error",
+      error: "No API key set.",
+      errorRaw: null
+    });
     return;
   }
 
@@ -335,7 +346,8 @@ async function runGeneration(
   if (!capabilities) {
     await updateSketch(sketchId, {
       status: "error",
-      error: "Model capabilities unknown."
+      error: "Model capabilities unknown.",
+      errorRaw: null
     });
     return;
   }
@@ -348,7 +360,8 @@ async function runGeneration(
       await updateSketch(sketchId, {
         status: "error",
         error:
-          "Session cost cap would be exceeded. Increase the cap or clear existing cost."
+          "Session cost cap would be exceeded. Increase the cap or clear existing cost.",
+        errorRaw: null
       });
       return;
     }
@@ -357,7 +370,8 @@ async function runGeneration(
       await updateSketch(sketchId, {
         status: "error",
         error:
-          "Chain cost cap would be exceeded. Increase the cap or clear existing cost."
+          "Chain cost cap would be exceeded. Increase the cap or clear existing cost.",
+        errorRaw: null
       });
       return;
     }
@@ -385,7 +399,8 @@ async function runGeneration(
     if (composed.inputImageCount > capabilities.maxInputImages) {
       await updateSketch(sketchId, {
         status: "error",
-        error: `Too many reference images (${composed.inputImageCount} > ${capabilities.maxInputImages}). Uncheck some attachments.`
+        error: `Too many reference images (${composed.inputImageCount} > ${capabilities.maxInputImages}). Uncheck some attachments.`,
+        errorRaw: null
       });
       return;
     }
@@ -399,7 +414,8 @@ async function runGeneration(
     if (!response.choices?.[0]?.message?.images?.length) {
       await updateSketch(sketchId, {
         status: "error",
-        error: "Model returned no image. Try a different prompt or model."
+        error: "Model returned no image. Try a different prompt or model.",
+        errorRaw: null
       });
       return;
     }
@@ -424,7 +440,8 @@ async function runGeneration(
       resultImageIds,
       costActualUsd: actualCost,
       requestSnapshot: composed.snapshot,
-      error: null
+      error: null,
+      errorRaw: null
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
@@ -433,7 +450,8 @@ async function runGeneration(
     }
     await updateSketch(sketchId, {
       status: "error",
-      error: humanizeError(e)
+      error: humanizeError(e),
+      errorRaw: rawErrorDetails(e)
     });
   }
 }
@@ -449,7 +467,7 @@ export function cancelSketch(sketchId: ID): void {
 export function retrySketch(sketchId: ID): void {
   const sketch = boardState.sketches.find((s) => s.id === sketchId);
   if (!sketch || sketch.status !== "error") return;
-  void updateSketch(sketchId, { status: "draft", error: null });
+  void updateSketch(sketchId, { status: "draft", error: null, errorRaw: null });
   submitSketch(sketchId);
 }
 
@@ -563,6 +581,7 @@ export async function forkChain(
     reasoningEffort: sourceReasoningEffort,
     status: "draft",
     error: null,
+    errorRaw: null,
     costEstimateUsd: null,
     costActualUsd: null,
     resultImageIds: [],

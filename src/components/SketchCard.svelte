@@ -50,6 +50,16 @@
     // Image display
     let imageUrl = $state<string | null>(null);
     let lightboxOpen = $state(false);
+    let showErrorRaw = $state(false);
+
+    $effect(() => {
+        if (sketch.status !== "error") showErrorRaw = false;
+    });
+
+    async function copyErrorRaw() {
+        if (!sketch.errorRaw) return;
+        await navigator.clipboard.writeText(sketch.errorRaw);
+    }
 
     $effect(() => {
         const firstId = sketch.resultImageIds[0];
@@ -274,6 +284,31 @@
     <!-- Error message -->
     {#if sketch.status === "error" && sketch.error}
         <p class="error-msg" role="alert">{sketch.error}</p>
+        {#if sketch.errorRaw}
+            <button
+                class="btn-ghost raw-toggle-btn"
+                onclick={() => (showErrorRaw = !showErrorRaw)}
+                aria-expanded={showErrorRaw}
+            >
+                {showErrorRaw ? "Hide raw response" : "View raw response"}
+            </button>
+            {#if showErrorRaw}
+                <div
+                    class="source-panel"
+                    role="region"
+                    aria-label="Raw error response"
+                >
+                    <div class="source-header">
+                        <span>Raw error response</span>
+                        <button
+                            class="btn-ghost copy-btn"
+                            onclick={copyErrorRaw}>Copy</button
+                        >
+                    </div>
+                    <pre class="source-pre"><code>{sketch.errorRaw}</code></pre>
+                </div>
+            {/if}
+        {/if}
     {/if}
 
     <!-- In-flight cost estimate (no image yet) -->
@@ -478,6 +513,45 @@
         border-radius: 4px;
         padding: 6px 8px;
         margin: 0;
+    }
+    .raw-toggle-btn {
+        align-self: flex-start;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+    }
+    .source-panel {
+        background: var(--clr-surface-2);
+        border: 1px solid var(--clr-border);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .source-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: var(--clr-bg);
+        border-bottom: 1px solid var(--clr-border);
+        font-size: 0.75rem;
+        color: var(--clr-text-2);
+    }
+    .source-header span {
+        flex: 1;
+    }
+    .copy-btn {
+        font-size: 0.75rem;
+        padding: 1px 6px;
+    }
+    .source-pre {
+        margin: 0;
+        padding: 10px 12px;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--clr-text);
+        overflow-x: auto;
+        max-height: 320px;
+        overflow-y: auto;
+        white-space: pre;
     }
     .cost-estimate {
         font-size: 0.75rem;

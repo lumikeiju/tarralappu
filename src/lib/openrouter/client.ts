@@ -2,12 +2,108 @@ import type {
   CompletionRequest,
   CompletionResponse,
   ModelListResponse,
-  ImageModelDiscoveryResponse
+  ImageModelDiscoveryResponse,
+  OpenRouterErrorDetail,
+  OpenRouterErrorMetadata
 } from "./types";
 
 const BASE = "https://openrouter.ai/api/v1";
 const SITE_URL = "https://lumikeiju.dev/tarralappu/";
 const SITE_NAME = "Tarralappu";
+
+/**
+ * Structured API error, per
+ * https://openrouter.ai/docs/api/reference/errors-and-debugging
+ *
+ * Carries both a best-effort parsed `error_type`/`message` (for a pretty,
+ * human-readable message) and the raw response body (for a "view raw
+ * response" debug affordance).
+ */
+export class OpenRouterApiError extends Error {
+  readonly status: number;
+  readonly errorType: string | null;
+  readonly providerCode: string | null;
+  readonly metadata: OpenRouterErrorMetadata | null;
+  readonly retryAfterSeconds: number | null;
+  /** Raw response body, pretty-printed JSON when possible. */
+  readonly rawBody: string;
+
+  constructor(opts: {
+    status: number;
+    message: string;
+    metadata?: OpenRouterErrorMetadata | null;
+    retryAfterSeconds?: number | null;
+    rawBody: string;
+  }) {
+    super(opts.message);
+    this.name = "OpenRouterApiError";
+    this.status = opts.status;
+    this.metadata = opts.metadata ?? null;
+    this.errorType = (this.metadata?.error_type as string | undefined) ?? null;
+    this.providerCode =
+      (this.metadata?.provider_code as string | undefined) ?? null;
+    this.retryAfterSeconds = opts.retryAfterSeconds ?? null;
+    this.rawBody = opts.rawBody;
+  }
+}
+
+function prettyJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** Best-effort parse of an OpenRouter `{ error: { code, message, metadata } }` body. */
+function parseErrorDetail(text: string): OpenRouterErrorDetail | null {
+  try {
+    const json = JSON.parse(text) as { error?: OpenRouterErrorDetail };
+    if (json && typeof json === "object" && json.error) return json.error;
+  } catch {
+    /* not JSON — fall through */
+  }
+  return null;
+}
+
+async function apiErrorFromResponse(
+  res: Response
+): Promise<OpenRouterApiError> {
+  const text = await res.text().catch(() => "");
+  const detail = parseErrorDetail(text);
+  const retryAfterHeader = res.headers.get("Retry-After");
+  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+  return new OpenRouterApiError({
+    status: res.status,
+    message: detail?.message ?? res.statusText ?? `HTTP ${res.status}`,
+    metadata: detail?.metadata ?? null,
+    retryAfterSeconds:
+      retryAfterSeconds !== null &&
+      Number.isFinite(retryAfterSeconds) &&
+      retryAfterSeconds > 0
+        ? retryAfterSeconds
+        : null,
+    rawBody: text ? prettyJson(text) : `HTTP ${res.status} ${res.statusText}`
+  });
+}
+
+/**
+ * Build an OpenRouterApiError from an in-band provider error — a request
+ * that returned HTTP 200 but failed during generation, with the error
+ * embedded in `choices[0].error` (see "When No Content is Generated" /
+ * "Provider Errors" in the docs above).
+ */
+function apiErrorFromChoiceError(
+  detail: OpenRouterErrorDetail,
+  fullResponse: unknown
+): OpenRouterApiError {
+  return new OpenRouterApiError({
+    status: typeof detail.code === "number" ? detail.code : 0,
+    message: detail.message,
+    metadata: detail.metadata ?? null,
+    rawBody: JSON.stringify(fullResponse, null, 2)
+  });
+}
 
 export async function listImageModels(
   signal?: AbortSignal
@@ -62,14 +158,21 @@ export async function chatCompletion(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    const err = Object.assign(new Error(`OpenRouter ${res.status}: ${text}`), {
-      status: res.status
-    });
-    throw err;
+    throw await apiErrorFromResponse(res);
   }
 
-  return res.json() as Promise<CompletionResponse>;
+  const json = (await res.json()) as CompletionResponse;
+
+  // Request-level errors return a non-2xx status (handled above). Errors
+  // that occur while the model is producing output still return HTTP 200,
+  // with the error embedded in the response body instead. See
+  // https://openrouter.ai/docs/api/reference/errors-and-debugging
+  const choiceError = json.choices?.[0]?.error;
+  if (choiceError) {
+    throw apiErrorFromChoiceError(choiceError, json);
+  }
+
+  return json;
 }
 
 /** Fallback cost fetch using the generation ID from the response. OPEN-2 */
@@ -92,23 +195,103 @@ export async function fetchGenerationCost(
   }
 }
 
-/** Map HTTP status to a user-friendly error message. */
+/**
+ * Friendly, human-readable message for a typed `error_type`. See
+ * "Typed Error Codes" in
+ * https://openrouter.ai/docs/api/reference/errors-and-debugging
+ */
+const ERROR_TYPE_MESSAGES: Record<string, string> = {
+  // Token and length limits
+  context_length_exceeded:
+    "The prompt plus conversation history is too long for this model's context window. Try a shorter prompt, fewer reference images, or fewer chained refinements.",
+  max_tokens_exceeded:
+    "Generation stopped early — the output token limit was reached.",
+  token_limit_exceeded: "A token budget cap was exceeded.",
+  string_too_long:
+    "One of the text fields in the request is too long for this provider.",
+  // Auth
+  authentication: "Invalid, missing, or revoked API key.",
+  permission_denied:
+    "Request blocked — insufficient permission or a content guardrail.",
+  payment_required: "Insufficient OpenRouter credits — add credits and retry.",
+  // Rate limiting / availability
+  rate_limit_exceeded: "Rate limited — please wait and retry.",
+  provider_overloaded:
+    "The upstream provider is temporarily overloaded. Retry shortly.",
+  provider_unavailable:
+    "The upstream provider returned an invalid or empty response.",
+  // Request validation
+  invalid_request: "The request was malformed or missing a required parameter.",
+  invalid_prompt:
+    "One of the messages in the request was invalid for this model.",
+  not_found: "The requested model or resource doesn't exist.",
+  precondition_failed: "A precondition for the request wasn't met.",
+  payload_too_large: "The request body is too large.",
+  unprocessable: "The request was well-formed but couldn't be processed.",
+  // Content policy
+  content_policy_violation:
+    "The input or output was flagged by a content filter.",
+  refusal: "The model refused this request (safety refusal).",
+  // Image errors
+  invalid_image: "One of the reference images is corrupt or unreadable.",
+  image_too_large:
+    "One of the reference images exceeds the provider's size limit.",
+  image_too_small:
+    "One of the reference images is below the provider's minimum size.",
+  unsupported_image_format:
+    "One of the reference images uses an unsupported format.",
+  image_not_found: "A referenced image could not be resolved.",
+  image_download_failed:
+    "OpenRouter couldn't download one of the reference images.",
+  // Generic
+  server: "An unexpected internal error occurred upstream.",
+  timeout: "The provider didn't respond in time.",
+  unmapped: "An unrecognized upstream error occurred."
+};
+
+function statusFallbackMessage(status: number, message: string): string {
+  switch (status) {
+    case 400:
+      return `Bad request: ${message}`;
+    case 401:
+      return "Invalid or missing API key.";
+    case 402:
+      return "Insufficient OpenRouter credits.";
+    case 403:
+      return "Forbidden — request blocked (permissions or a content guardrail).";
+    case 408:
+      return "The request timed out.";
+    case 429:
+      return "Rate limited — please wait and retry.";
+    case 502:
+      return "The chosen model is down or returned an invalid response.";
+    case 503:
+      return "No available provider meets this model's routing requirements right now.";
+    default:
+      return message || `Request failed (HTTP ${status}).`;
+  }
+}
+
+/** Map an error to a pretty, human-readable message. */
 export function humanizeError(err: unknown): string {
-  if (err instanceof Error && "status" in err) {
-    switch ((err as { status: number }).status) {
-      case 401:
-        return "Invalid or missing API key.";
-      case 402:
-        return "Insufficient OpenRouter credits.";
-      case 429:
-        return "Rate limited — please wait and retry.";
-      case 400:
-        return `Bad request: ${err.message}`;
-    }
+  if (err instanceof OpenRouterApiError) {
+    const known = err.errorType
+      ? ERROR_TYPE_MESSAGES[err.errorType]
+      : undefined;
+    const message = known ?? statusFallbackMessage(err.status, err.message);
+    return err.retryAfterSeconds
+      ? `${message} Retry after ~${err.retryAfterSeconds}s.`
+      : message;
   }
   if (err instanceof DOMException && err.name === "AbortError") {
     return "Cancelled.";
   }
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** Raw response body (pretty-printed JSON when possible), for a "view raw" debug affordance. Null when the error has no raw API response to show. */
+export function rawErrorDetails(err: unknown): string | null {
+  if (err instanceof OpenRouterApiError) return err.rawBody;
+  return null;
 }
