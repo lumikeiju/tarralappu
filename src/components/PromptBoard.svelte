@@ -3,8 +3,10 @@
         boardState,
         addPromptNote,
         updatePromptNote,
-        removePromptNote
+        removePromptNote,
+        sendPromptToModels
     } from "../lib/state/board.svelte";
+    import SendToDialog from "./SendToDialog.svelte";
 
     const notes = $derived(boardState.board?.settings.promptNotes ?? []);
 
@@ -44,6 +46,23 @@
     function onAdd() {
         void addPromptNote();
     }
+
+    // "Send to" dialog: which note (if any) is currently being sent.
+    let sendDialogNoteId = $state<string | null>(null);
+    const sendDialogNote = $derived(
+        notes.find((n) => n.id === sendDialogNoteId) ?? null
+    );
+
+    function openSendDialog(id: string) {
+        sendDialogNoteId = id;
+    }
+    function closeSendDialog() {
+        sendDialogNoteId = null;
+    }
+    function handleSend(modelIds: string[]) {
+        if (!sendDialogNote) return;
+        void sendPromptToModels(sendDialogNote.text, modelIds);
+    }
 </script>
 
 <div class="prompt-board" role="list" aria-label="Prompt board notes">
@@ -64,6 +83,15 @@
                     disabled={!note.text}
                 >
                     {copiedId === note.id ? "✓" : "⧉"}
+                </button>
+                <button
+                    class="btn-icon"
+                    onclick={() => openSendDialog(note.id)}
+                    aria-label="Send this prompt to one or more models"
+                    title="Send to…"
+                    disabled={!note.text}
+                >
+                    ➤
                 </button>
                 <button
                     class="btn-icon prompt-note__remove"
@@ -101,6 +129,13 @@
         </button>
     </div>
 </div>
+
+<SendToDialog
+    open={sendDialogNote !== null}
+    promptPreview={sendDialogNote?.text ?? ""}
+    onClose={closeSendDialog}
+    onSend={handleSend}
+/>
 
 <style>
     .prompt-board {

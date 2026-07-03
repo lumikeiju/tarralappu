@@ -2,6 +2,7 @@
     import { boardState, loadAvailableModels } from "../lib/state/board.svelte";
     import type { ModelCapabilities } from "../lib/openrouter/types";
     import { formatModelPricing, pricingTier } from "../lib/openrouter/cost";
+    import { groupModelsByCreator } from "../lib/openrouter/modelGroups";
 
     const {
         value,
@@ -16,67 +17,13 @@
 
     let filter = $state("");
 
-    // Friendly display names for known creators (model id prefix before "/").
-    const CREATOR_LABELS: Record<string, string> = {
-        google: "Google",
-        openai: "OpenAI",
-        anthropic: "Anthropic",
-        "black-forest-labs": "Black Forest Labs",
-        "bytedance-seed": "ByteDance Seed",
-        microsoft: "Microsoft",
-        recraft: "Recraft",
-        sourceful: "Sourceful",
-        "x-ai": "xAI",
-        openrouter: "OpenRouter"
-    };
-
-    function creatorKey(id: string): string {
-        return id.split("/")[0] ?? id;
-    }
-
-    function creatorLabel(key: string): string {
-        return (
-            CREATOR_LABELS[key] ??
-            key
-                .split("-")
-                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(" ")
-        );
-    }
-
     function label(m: ModelCapabilities): string {
         return m.estimated ? `${m.name} (capabilities estimated)` : m.name;
     }
 
-    interface CreatorGroup {
-        key: string;
-        label: string;
-        models: ModelCapabilities[];
-    }
-
-    const groups = $derived.by((): CreatorGroup[] => {
-        const term = filter.trim().toLowerCase();
-        const filtered = boardState.availableModels.filter(
-            (m) =>
-                term === "" ||
-                m.name.toLowerCase().includes(term) ||
-                m.id.toLowerCase().includes(term)
-        );
-        const byCreator = new Map<string, ModelCapabilities[]>();
-        for (const m of filtered) {
-            const key = creatorKey(m.id);
-            const list = byCreator.get(key);
-            if (list) list.push(m);
-            else byCreator.set(key, [m]);
-        }
-        return [...byCreator.entries()]
-            .map(([key, models]) => ({
-                key,
-                label: creatorLabel(key),
-                models: [...models].sort((a, b) => a.name.localeCompare(b.name))
-            }))
-            .sort((a, b) => a.label.localeCompare(b.label));
-    });
+    const groups = $derived(
+        groupModelsByCreator(boardState.availableModels, filter)
+    );
 
     const selectedModel = $derived(
         boardState.availableModels.find((m) => m.id === value)
@@ -236,6 +183,7 @@
     }
     .model-name {
         flex: 1;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
