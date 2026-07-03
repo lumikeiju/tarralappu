@@ -222,6 +222,7 @@ export async function createRootSketch(
     },
     aspectRatio: board?.settings.defaultAspectRatio ?? "1:1",
     imageSize: board?.settings.defaultImageSize ?? "1K",
+    reasoningEffort: null,
     status: "draft",
     error: null,
     costEstimateUsd: null,
@@ -260,6 +261,7 @@ export async function createRefinementSketch(
     },
     aspectRatio: parent.aspectRatio,
     imageSize: parent.imageSize,
+    reasoningEffort: parent.reasoningEffort,
     status: "draft",
     error: null,
     costEstimateUsd: null,
@@ -506,6 +508,7 @@ export async function forkChain(
     "1:1";
   const sourceImageSize =
     source?.imageSize ?? boardState.board?.settings.defaultImageSize ?? "1K";
+  const sourceReasoningEffort = source?.reasoningEffort ?? null;
 
   // Collect ancestors (order < atSketchOrder) and JSON-roundtrip them to strip
   // Svelte 5 reactive proxies before using them as plain data.
@@ -545,6 +548,7 @@ export async function forkChain(
     attach: { styleDoc: false, styleRef: false, layoutRef: false },
     aspectRatio: sourceAspectRatio,
     imageSize: sourceImageSize,
+    reasoningEffort: sourceReasoningEffort,
     status: "draft",
     error: null,
     costEstimateUsd: null,
