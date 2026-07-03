@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.1.0 (2026-07-03)
+
+### Features
+
+- Add support for optional reasoning effort on the `openai/gpt-5.4-image-2` model. Resolution controls expose a Reasoning selector; sketch updates persist the value, and sketch creation/refinement/forking carry it forward.
+
 ## v1.0.0 (2026-06-21)
 
 ### Features
