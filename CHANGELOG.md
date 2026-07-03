@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.4.0 (2026-07-03)
+
+### Features
+
+- Redesigned the model picker: dropped the pinned/suggested-models shortlist (all image models are shown), grouped models by creator (Google, OpenAI, Black Forest Labs, etc.) with a divider between each group, and added runtime-fetched inline pricing per the [Pricing Object](https://openrouter.ai/docs/guides/overview/models#pricing-object) (per-1M-token, per-image, and per-request rates, whichever apply to the model, with redundant trailing zeros trimmed), plus a small $/$$/$$$ relative-cost badge per model. Genuinely free (`:free`-suffixed) models are labeled "Free" instead of the ambiguous "pricing not listed" shown for models whose cost isn't captured by these fields at all. The "New Sketch" composer card is wider so the full pricing text isn't clipped.
+
 ## v1.3.0 (2026-07-03)
 
 ### Features
