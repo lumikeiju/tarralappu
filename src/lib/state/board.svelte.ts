@@ -197,6 +197,24 @@ export async function removePromptNote(id: ID): Promise<void> {
   await saveBoard(JSON.parse(JSON.stringify(board)));
 }
 
+/**
+ * "Send to" a Prompt Board note: create one new chain + draft root sketch
+ * per chosen model, all pre-filled with the same prompt text. Each sketch
+ * lands as an editable DRAFT (per-chain aspect ratio/size/model still to be
+ * confirmed) — the user must still click Generate on each card themselves.
+ * Chains are created sequentially (not in parallel) so each one sees the
+ * previous chain's `order` — see createChain().
+ */
+export async function sendPromptToModels(
+  prompt: string,
+  modelIds: string[]
+): Promise<void> {
+  for (const modelId of modelIds) {
+    const chain = await createChain(modelId);
+    await createRootSketch(chain.id, prompt, modelId);
+  }
+}
+
 // ── Chain mutations ──────────────────────────────────────────────────────────
 
 export async function createChain(modelId: string): Promise<Chain> {
