@@ -62,7 +62,7 @@
 
 <style>
     .composer {
-        max-width: 480px;
+        max-width: 720px;
         display: flex;
         flex-direction: column;
         gap: 10px;

@@ -12,26 +12,6 @@ import type {
 const FALLBACK_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const FALLBACK_IMAGE_SIZES = ["1K"];
 
-/** Model IDs pinned at the top of the picker (display order). */
-export const PINNED_MODEL_IDS = [
-  // Google Gemini image models (newest → oldest)
-  "google/gemini-3-pro-image",
-  "google/gemini-3.1-flash-image",
-  "google/gemini-2.5-flash-image",
-  // OpenAI GPT image models
-  "openai/gpt-5-image-mini",
-  "openai/gpt-5.4-image-2",
-  // ByteDance Seedream
-  "bytedance-seed/seedream-4.5",
-  // FLUX.2 family (alphabetical within family)
-  "black-forest-labs/flux.2-flex",
-  "black-forest-labs/flux.2-klein-4b",
-  "black-forest-labs/flux.2-max",
-  "black-forest-labs/flux.2-pro",
-  // Microsoft
-  "microsoft/mai-image-2.5"
-];
-
 function enumValues(desc: ParameterDescriptor | undefined): string[] | null {
   return desc?.type === "enum" ? desc.values : null;
 }

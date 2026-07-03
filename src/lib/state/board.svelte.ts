@@ -31,10 +31,7 @@ import {
   listImageModels,
   listImageModelCapabilities
 } from "../openrouter/client";
-import {
-  resolveAllCapabilities,
-  PINNED_MODEL_IDS
-} from "../openrouter/capabilities";
+import { resolveAllCapabilities } from "../openrouter/capabilities";
 import type { ModelCapabilities } from "../openrouter/types";
 import {
   chatCompletion,
@@ -95,21 +92,6 @@ export function chainCostTotal(chainId: ID): number {
   return boardState.sketches
     .filter((s) => s.chainId === chainId)
     .reduce((sum, s) => sum + (s.costActualUsd ?? 0), 0);
-}
-
-export function pinnedModels(): ModelCapabilities[] {
-  const all = boardState.availableModels;
-  const pinned: ModelCapabilities[] = [];
-  for (const id of PINNED_MODEL_IDS) {
-    const m = all.find((x) => x.id === id);
-    if (m) pinned.push(m);
-  }
-  return pinned;
-}
-
-export function unpinnedModels(): ModelCapabilities[] {
-  const pinnedIds = new Set(PINNED_MODEL_IDS);
-  return boardState.availableModels.filter((m) => !pinnedIds.has(m.id));
 }
 
 // ── Queue ────────────────────────────────────────────────────────────────────
