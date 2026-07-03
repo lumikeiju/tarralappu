@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.5.0 (2026-07-03)
+
+### Features
+
+- Added a "Prompt Board" shelf (collapsible, like Style & References): a horizontal row of sticky notes with free-text boxes for drafting/copying prompt snippets. Add as many as needed via the dashed "+ Add Note" card; each note has a copy-to-clipboard and remove button. Notes persist in board settings (`BoardSettings.promptNotes`).
+
 ## v1.4.0 (2026-07-03)
 
 ### Features
