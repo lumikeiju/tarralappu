@@ -226,9 +226,7 @@ X-Title: Tarralappu                                (optional ranking metadata)
 ```jsonc
 {
     "model": "<modelId>",
-    "messages": [
-        /* see §6 composition */
-    ],
+    "messages": [/* see §6 composition */],
     "modalities": ["image", "text"], // or ["image"] for image-only models
     "image_config": { "aspect_ratio": "16:9", "image_size": "2K" },
     "usage": { "include": true }, // request usage accounting for cost
@@ -257,9 +255,7 @@ X-Title: Tarralappu                                (optional ranking metadata)
             }
         }
     ],
-    "usage": {
-        /* tokens + cost when usage.include=true */
-    }
+    "usage": {/* tokens + cost when usage.include=true */}
 }
 ```
 

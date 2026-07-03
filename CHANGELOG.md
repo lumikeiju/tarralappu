@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.3.0 (2026-07-03)
+
+### Features
+
+- Improved error handling per [OpenRouter's errors-and-debugging reference](https://openrouter.ai/docs/api/reference/errors-and-debugging): typed `error_type` codes (rate limits, content policy, image errors, context length, etc.) are mapped to plain-language messages, including `Retry-After` hints. In-band provider errors (HTTP 200 with `choices[0].error`, e.g. mid-generation provider failures) are now detected and surfaced instead of a generic "no image returned" message. Error cards get a "View raw response" toggle showing the pretty-printed raw API error body, with copy-to-clipboard.
+
 ## v1.2.0 (2026-07-03)
 
 ### Features

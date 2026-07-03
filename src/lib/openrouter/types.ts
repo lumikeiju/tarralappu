@@ -26,6 +26,27 @@ export interface ModelListResponse {
   data: RawModel[];
 }
 
+// Errors — https://openrouter.ai/docs/api/reference/errors-and-debugging
+export interface OpenRouterErrorMetadata {
+  error_type?: string;
+  provider_code?: string;
+  reasons?: string[];
+  flagged_input?: string;
+  provider_name?: string;
+  model_slug?: string;
+  [key: string]: unknown;
+}
+
+export interface OpenRouterErrorDetail {
+  code: number | string;
+  message: string;
+  metadata?: OpenRouterErrorMetadata;
+}
+
+export interface OpenRouterErrorBody {
+  error: OpenRouterErrorDetail;
+}
+
 // Image API model discovery — GET /api/v1/images/models
 // https://openrouter.ai/blog/announcements/image-api/
 export type ParameterDescriptor =
@@ -106,6 +127,12 @@ export interface CompletionChoice {
   index: number;
   message: CompletionMessage;
   finish_reason: string | null;
+  /**
+   * In-band provider error (HTTP status stays 200; the request itself was
+   * valid but generation failed). See
+   * https://openrouter.ai/docs/api/reference/errors-and-debugging
+   */
+  error?: OpenRouterErrorDetail;
 }
 
 export interface CompletionUsage {

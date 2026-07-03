@@ -62,6 +62,8 @@ export interface Sketch {
   reasoningEffort: "low" | "medium" | "high" | null;
   status: SketchStatus;
   error: string | null;
+  /** Raw API error response (pretty-printed JSON), for the "view raw response" debug affordance. Null for local/synthetic errors with no API response. */
+  errorRaw: string | null;
   costEstimateUsd: number | null;
   costActualUsd: number | null;
   resultImageIds: ID[];
