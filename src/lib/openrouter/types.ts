@@ -58,6 +58,9 @@ export interface CompletionRequest {
   messages: ChatMessage[];
   modalities: ("image" | "text")[];
   image_config?: { aspect_ratio?: string; image_size?: string };
+  provider?: {
+    reasoning_effort?: "low" | "medium" | "high";
+  };
   stream: false;
   usage: { include: true };
 }

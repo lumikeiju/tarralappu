@@ -41,6 +41,7 @@ export interface SketchRequestSnapshot {
   model: string;
   modalities: ("image" | "text")[];
   image_config?: { aspect_ratio?: string; image_size?: string };
+  provider?: { reasoning_effort?: "low" | "medium" | "high" };
   messages: Array<{
     role: "user" | "assistant";
     text: string;
@@ -58,6 +59,7 @@ export interface Sketch {
   attach: AttachFlags;
   aspectRatio: string;
   imageSize: string;
+  reasoningEffort: "low" | "medium" | "high" | null;
   status: SketchStatus;
   error: string | null;
   costEstimateUsd: number | null;

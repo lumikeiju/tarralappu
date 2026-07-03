@@ -295,10 +295,15 @@ export async function composeRequest(
     };
   }
 
+  if (sketch.reasoningEffort) {
+    body.provider = { reasoning_effort: sketch.reasoningEffort };
+  }
+
   const snapshot: SketchRequestSnapshot = {
     model: sketch.modelId,
     modalities: body.modalities,
     image_config: body.image_config,
+    provider: body.provider,
     messages: snapshotMessages
   };
 
@@ -311,6 +316,7 @@ export function elidedRequestJson(snapshot: SketchRequestSnapshot): string {
     model: snapshot.model,
     modalities: snapshot.modalities,
     ...(snapshot.image_config ? { image_config: snapshot.image_config } : {}),
+    ...(snapshot.provider ? { provider: snapshot.provider } : {}),
     messages: snapshot.messages.map((msg) => ({
       role: msg.role,
       content: [

@@ -190,6 +190,13 @@ const MODEL_OVERRIDES: Record<string, CapOverride> = {
     aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
     imageSizes: ["1K"],
     supportsImageConfig: true
+  },
+  "openai/gpt-5.4-image-2": {
+    conversational: true,
+    maxInputImages: 10,
+    aspectRatios: DEFAULT_ASPECT_RATIOS,
+    imageSizes: ["1K", "2K"],
+    supportsImageConfig: true
   }
 };
 
