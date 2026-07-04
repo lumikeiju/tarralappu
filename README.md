@@ -8,11 +8,13 @@ Live at **[lumikeiju.dev/tarralappu/](https://lumikeiju.dev/tarralappu/)**.
 
 ## Features
 
-- **Model-aware**: dynamically fetches every image-capable model from OpenRouter; pins common ones, expandable to the full list.
+- **Model-aware**: dynamically fetches every image-capable model from OpenRouter, grouped by creator with inline pricing and an at-a-glance cost tier.
 - **Chain-based workflow**: each chain (row) locks to one model. Add a root sketch, refine it to the right, fork any card into a new row to branch.
+- **Prompt Board**: a scratchpad of reusable prompt notes; "send" any note to one or more models at once, each landing as an editable draft.
 - **Global style context**: a style document, style reference image, and layout reference image attach to any sketch via checkboxes.
 - **Conversational refinement**: reasoning models receive the full thread history; image-only models (Flux, etc.) automatically fall back to image-to-image.
 - **Cost tracking**: estimated and actual cost per sketch, chain totals, session total, configurable caps.
+- **Clear error messages**: typed API errors are mapped to plain language, with a raw-response view for debugging.
 - **Client-only, no backend**: your API key stays in the browser and is sent directly to OpenRouter.
 - **Dark and light sticky-note themes**, WCAG 2.2 AA compliant.
 

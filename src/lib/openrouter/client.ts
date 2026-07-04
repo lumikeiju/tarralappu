@@ -3,6 +3,7 @@ import type {
   CompletionResponse,
   ModelListResponse,
   ImageModelDiscoveryResponse,
+  OpenRouterErrorBody,
   OpenRouterErrorDetail,
   OpenRouterErrorMetadata
 } from "./types";
@@ -58,7 +59,7 @@ function prettyJson(text: string): string {
 /** Best-effort parse of an OpenRouter `{ error: { code, message, metadata } }` body. */
 function parseErrorDetail(text: string): OpenRouterErrorDetail | null {
   try {
-    const json = JSON.parse(text) as { error?: OpenRouterErrorDetail };
+    const json = JSON.parse(text) as OpenRouterErrorBody;
     if (json && typeof json === "object" && json.error) return json.error;
   } catch {
     /* not JSON — fall through */
@@ -175,7 +176,10 @@ export async function chatCompletion(
   return json;
 }
 
-/** Fallback cost fetch using the generation ID from the response. OPEN-2 */
+/**
+ * Fallback cost fetch using the generation ID from a completed response,
+ * for models that don't return `usage.cost`/`usage.total_cost` inline.
+ */
 export async function fetchGenerationCost(
   generationId: string,
   apiKey: string

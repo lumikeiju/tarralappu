@@ -5,9 +5,10 @@ import type {
 } from "./types";
 
 /**
- * Pre-send cost estimate in USD.
- * Returns null when pricing is unknown (all fields are "0").
- * OPEN-2: verify exact field names against a live response.
+ * Pre-send cost estimate in USD, from the model's flat per-image/per-request
+ * pricing. Returns null when neither is populated (token-billed models, or
+ * models whose cost isn't captured by these Pricing Object fields at all) —
+ * `costActualUsd` from the response `usage` is always the source of truth.
  */
 export function estimateCost(
   capabilities: ModelCapabilities,
@@ -24,7 +25,7 @@ export function estimateCost(
 
 /**
  * Parse actual cost from the usage field of a completion response.
- * OPEN-2: some image models return cost under total_cost, others under cost.
+ * Different providers report it under either `cost` or `total_cost`.
  */
 export function parseCostFromResponse(
   response: CompletionResponse

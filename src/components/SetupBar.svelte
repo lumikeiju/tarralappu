@@ -22,6 +22,7 @@
                 class="btn-ghost"
                 onclick={() => (showKey = !showKey)}
                 aria-expanded={showKey}
+                aria-controls="key-panel"
             >
                 API Key <span aria-hidden="true">{showKey ? "▲" : "▼"}</span>
             </button>
