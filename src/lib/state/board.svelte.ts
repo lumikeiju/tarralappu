@@ -486,8 +486,10 @@ async function runGeneration(
 }
 
 // ── Cancel ────────────────────────────────────────────────────────────────────
-
-export function cancelSketch(sketchId: ID): void {
+// Not exported: only used internally by trashSketchesFrom() below. Trashing a
+// queued/generating card is the only way to cancel a job (no standalone
+// cancel button in the UI).
+function cancelSketch(sketchId: ID): void {
   queue.cancel(sketchId);
 }
 

@@ -1,14 +1,14 @@
 <!-- @format -->
 
-# Tarralappu — Implementation Plan (v1)
+# Tarralappu — Architecture Reference
 
-Handoff spec for implementation. Read top to bottom before writing code. Every decision here is locked unless flagged **OPEN**.
+How the app is built, for anyone (human or agent) making changes. This describes the **current** implementation, not a forward-looking plan — see [`CHANGELOG.md`](../CHANGELOG.md) for the history of how it got here and [`AGENTS.md`](../AGENTS.md) for repo-wide conventions.
 
 ---
 
 ## 1. What this is
 
-**Tarralappu** (Finnish: "sticky note / label") is a single-page, client-only web app that acts as a **harness for AI image generation** through [OpenRouter](https://openrouter.ai). The user brings their own OpenRouter API key, picks an image-capable model, writes a global **style document**, optionally attaches a **style reference image** and a **layout reference image**, then spawns any number of **sketches** (generation attempts). Each sketch can be **refined** in a left-to-right **chain** (row). The aesthetic is a **sticky-note board** with **dark and light themes**.
+**Tarralappu** (Finnish: "sticky note / label") is a single-page, client-only web app that acts as a **harness for AI image generation** through [OpenRouter](https://openrouter.ai). The user brings their own OpenRouter API key, picks an image-capable model per chain, writes a global **style document**, optionally attaches a **style reference image** and a **layout reference image**, then spawns any number of **sketches** (generation attempts). Each sketch can be **refined** in a left-to-right **chain** (row). A **Prompt Board** shelf holds reusable prompt scratch-notes that can be "sent to" one or more models at once, each landing as a new draft chain. The aesthetic is a **sticky-note board** with **dark and light themes**.
 
 It is a personal-but-public tool. Optimise for the single maintainer's clarity over ecosystem generality.
 
@@ -48,7 +48,8 @@ devDependencies: vite, @sveltejs/vite-plugin-svelte, typescript, svelte-check,
         "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
         "preview": "vite preview",
         "check": "svelte-check --tsconfig ./tsconfig.json",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
     }
 }
 ```
@@ -69,68 +70,78 @@ vite.config.ts
 svelte.config.js
 tsconfig.json
 package.json
-prettier.config.mjs              (exists)
-.github/workflows/deploy.yml     (new — GH Pages)
+.github/workflows/deploy.yml     (GH Pages)
 docs/implementation-plan.md      (this file)
 src/
   main.ts
-  App.svelte
-  app.css                        (global tokens + theme + reset)
+  App.svelte                      (top-level shelves: Style & References, Prompt Board, Board)
+  app.css                         (global tokens + theme + reset)
   lib/
     openrouter/
-      types.ts                   (request/response/model TS types)
-      client.ts                  (fetch wrappers: chatCompletion, listModels)
-      capabilities.ts            (capability inference + MODEL_CAPABILITY_OVERRIDES)
-      compose.ts                 (message composition: conversational + i2i, ref labeling)
-      cost.ts                    (pre-send estimate + parse usage)
+      types.ts                    (request/response/model/error TS types)
+      client.ts                   (fetch wrappers: chatCompletion, listImageModels,
+                                    listImageModelCapabilities, error handling)
+      capabilities.ts              (resolves ModelCapabilities from live discovery data)
+      modelGroups.ts               (creator grouping shared by ModelPicker + SendToDialog)
+      compose.ts                   (message composition: conversational + i2i, ref labeling)
+      cost.ts                      (pre-send estimate, usage parsing, pricing/tier formatting)
     queue/
-      queue.ts                   (concurrency-limited job runner)
+      queue.ts                     (concurrency-limited job runner)
     state/
-      settings.svelte.ts         (key, model, theme, caps, concurrency)
-      board.svelte.ts            (board/chains/sketches reactive store)
+      settings.svelte.ts           (key, theme, caps, concurrency)
+      board.svelte.ts              (board/chains/sketches/prompt-notes reactive store)
     db/
-      schema.ts                  (idb open + object stores)
-      repo.ts                    (CRUD: boards/chains/sketches/images/settings)
-      images.ts                  (dataURL<->Blob, objectURL lifecycle)
+      schema.ts                    (idb open + object stores + domain types)
+      repo.ts                      (CRUD: boards/chains/sketches/settings)
+      images.ts                    (Blob storage, refcounting, objectURL lifecycle)
     util/
-      id.ts                      (crypto.randomUUID wrapper)
-      result.ts                  (Result<T,E> helper)
+      id.ts                        (crypto.randomUUID wrapper)
   components/
-    SetupBar.svelte              (key entry + theme toggle + cost meter + concurrency)
+    SetupBar.svelte                (key entry + theme toggle + cost meter + concurrency)
     ApiKeyPanel.svelte
-    NewChainComposer.svelte      (model picker + first prompt; creates a chain-locked row)
-    ModelPicker.svelte           (pinned + expand-all + filter; used by NewChainComposer)
+    NewChainComposer.svelte        (model picker + first prompt; creates a chain-locked row)
+    ModelPicker.svelte             (grouped-by-creator, priced, filterable)
+    SendToDialog.svelte            (Prompt Board "send to models" multi-select dialog)
+    PromptBoard.svelte             (scratch-note shelf: add/edit/copy/remove/send)
     StyleDocPanel.svelte
     ReferenceImages.svelte
+    SessionCapPanel.svelte
+    NotePanel.svelte                (reusable sticky-note card wrapper)
     Board.svelte
-    Chain.svelte                 (one row; shows locked-model badge + chain cost cap)
+    Chain.svelte                    (one row; shows locked-model badge + chain cost cap)
     SketchCard.svelte
-    NewSketchButton.svelte
     AttachmentChecks.svelte
     ResolutionControls.svelte
-    CardActions.svelte           (view-source, trash-cascade, refresh/fork, retry)
+    CardActions.svelte              (view-source, trash-cascade, refresh/fork, retry)
+    Lightbox.svelte                 (native <dialog> image zoom)
     CostMeter.svelte
     ThemeToggle.svelte
-    Admonition.svelte            (warning / danger callouts, e.g. <!>)
+    Admonition.svelte               (warning / danger callouts)
 ```
 
 ---
 
 ## 4. Domain model (TypeScript)
 
-Keep these in `lib/state` / `lib/db/schema.ts` as appropriate.
+Kept in `lib/db/schema.ts`. This mirrors the actual types — see that file for the source of truth.
 
 ```ts
 type ID = string; // crypto.randomUUID()
 
+interface PromptNote {
+    id: ID;
+    text: string; // free-text scratchpad note, not attached to generation
+}
+
 interface BoardSettings {
-    defaultModelId: string | null; // pre-fills the model picker when starting a NEW chain (model is chain-locked, not global)
-    styleDoc: string; // global "how it should look"
-    styleRefImageId: ID | null; // stored image (role: styleRef)
-    layoutRefImageId: ID | null; // stored image (role: layoutRef)
-    sessionCostCapUsd: number | null; // null = no cap
-    defaultAspectRatio: string; // e.g. "1:1"
-    defaultImageSize: string; // e.g. "1K"
+    defaultModelId: string | null;
+    styleDoc: string;
+    styleRefImageId: ID | null;
+    layoutRefImageId: ID | null;
+    sessionCostCapUsd: number | null;
+    defaultAspectRatio: string;
+    defaultImageSize: string;
+    promptNotes: PromptNote[];
 }
 
 interface Board {
@@ -145,7 +156,7 @@ interface Chain {
     boardId: ID;
     order: number; // row order, top to bottom
     modelId: string; // CHAIN-LOCKED model; every sketch in this row uses it (per-card model deferred)
-    forkedFrom?: { chainId: ID; sketchOrder: number } | null; // provenance when created via fork
+    forkedFrom: { chainId: ID; sketchOrder: number } | null; // provenance when created via fork
     chainCostCapUsd: number | null;
     createdAt: number;
 }
@@ -163,17 +174,19 @@ interface Sketch {
     chainId: ID;
     parentSketchId: ID | null; // null = root (leftmost in row)
     order: number; // position within the chain, left to right
-    modelId: string; // mirrors chain.modelId (denormalised; chain-locked in v1)
-    prompt: string; // per-sketch subject (root) or refinement (child)
+    modelId: string; // mirrors chain.modelId (denormalised; chain-locked)
+    prompt: string;
     attach: AttachFlags;
     aspectRatio: string;
     imageSize: string;
+    reasoningEffort: "low" | "medium" | "high" | null; // openai/gpt-5.4-image-2 only
     status: SketchStatus;
-    error: string | null;
+    error: string | null; // human-readable message
+    errorRaw: string | null; // pretty-printed raw API error body, or null for local/synthetic errors
     costEstimateUsd: number | null;
     costActualUsd: number | null;
-    resultImageIds: ID[]; // generated image(s); some models return >1. Display first as primary.
-    requestSnapshot?: SketchRequestSnapshot; // lightweight: params + prompt + referenced image IDs, NOT raw base64 (see §6.6/§8)
+    resultImageIds: ID[]; // generated image(s); display first as primary
+    requestSnapshot: SketchRequestSnapshot | null; // lightweight: params + prompt + image IDs, never base64
     createdAt: number;
 }
 
@@ -182,17 +195,16 @@ interface StoredImage {
     role: "generated" | "styleRef" | "layoutRef";
     blob: Blob; // store as Blob, not data URL
     mime: string;
-    width?: number;
-    height?: number;
-    refCount: number; // # of sketches referencing it; forks share image IDs. Delete only at 0.
+    refCount: number; // # of sketches referencing it; forks share image IDs, delete only at 0
     createdAt: number;
 }
 
-// Lightweight, base64-free record of what was sent (powers View source §6.6 + retry).
+// Lightweight, base64-free record of what was sent (powers View source + retry).
 interface SketchRequestSnapshot {
     model: string;
     modalities: ("image" | "text")[];
     image_config?: { aspect_ratio?: string; image_size?: string };
+    provider?: { reasoning_effort?: "low" | "medium" | "high" };
     messages: Array<{
         role: "user" | "assistant";
         text: string;
@@ -208,7 +220,8 @@ interface SketchRequestSnapshot {
 ### 5.1 Endpoints
 
 - **Chat completion (generation):** `POST https://openrouter.ai/api/v1/chat/completions`
-- **Model discovery:** `GET https://openrouter.ai/api/v1/models?output_modalities=image`
+- **Model catalog + pricing:** `GET https://openrouter.ai/api/v1/models?output_modalities=image`
+- **Model capability discovery:** `GET https://openrouter.ai/api/v1/images/models` (from OpenRouter's dedicated [Image API](https://openrouter.ai/blog/announcements/image-api/); public, no key)
 
 Headers on every call:
 
@@ -219,7 +232,9 @@ HTTP-Referer: https://lumikeiju.dev/tarralappu/   (optional ranking metadata)
 X-Title: Tarralappu                                (optional ranking metadata)
 ```
 
-> **`GET /models` is public** — it needs no API key. Fetch the model list (and capabilities) on first load so the picker is populated before the user enters a key. The key is required only for **generation**.
+> **Both `GET` endpoints above are public** — no API key needed. Fetch them on first load so the picker is populated before the user enters a key. The key is required only for **generation**.
+
+**Why generation still goes through `/chat/completions` and not the dedicated `/api/v1/images` endpoint:** that endpoint is stateless (single prompt + optional reference images, no conversation), which would break the conversational-refinement design (§6.4 below). It's used here only for capability discovery, not generation.
 
 ### 5.2 Request body (generation)
 
@@ -228,14 +243,14 @@ X-Title: Tarralappu                                (optional ranking metadata)
     "model": "<modelId>",
     "messages": [/* see §6 composition */],
     "modalities": ["image", "text"], // or ["image"] for image-only models
-    "image_config": { "aspect_ratio": "16:9", "image_size": "2K" },
+    "image_config": { "aspect_ratio": "16:9", "image_size": "2K" }, // omitted if unsupported
     "usage": { "include": true }, // request usage accounting for cost
     "stream": false
 }
 ```
 
-- **`modalities` is model-dependent.** Text+image models use `["image","text"]`; image-only models (Flux, Sourceful) use `["image"]`. Derived from capability map (§5.4). Sending the wrong one fails.
-- `image_config` keys included only when the model supports them; values constrained to that model's allowed set (§5.4).
+- **`modalities` is model-dependent.** Text+image models use `["image","text"]`; image-only models (Flux, Sourceful, Recraft, GPT Image) use `["image"]`. Derived from `ModelCapabilities.outputModalities`.
+- `image_config` is included only when `ModelCapabilities.supportsImageConfig` is true, with values constrained to that model's allowed aspect ratios/sizes.
 
 ### 5.3 Response shape
 
@@ -252,7 +267,12 @@ X-Title: Tarralappu                                (optional ranking metadata)
                         "image_url": { "url": "data:image/png;base64,..." }
                     }
                 ]
-            }
+            },
+            "error": {
+                "code": 502,
+                "message": "...",
+                "metadata": { "error_type": "..." }
+            } // optional, in-band failure — see §8
         }
     ],
     "usage": {/* tokens + cost when usage.include=true */}
@@ -260,51 +280,39 @@ X-Title: Tarralappu                                (optional ranking metadata)
 ```
 
 - Generated image = `choices[0].message.images[].image_url.url` (base64 data URL → convert to Blob, store).
-- **Guard:** if `images` is missing/empty → treat as error state "no image returned" (per §10).
+- **Guard:** if `images` is missing/empty and there's no in-band `error`, treat as error state "no image returned".
 
-### 5.4 Capability model — the crux
+### 5.4 Capability model
 
-The Models API exposes `id`, `name`, `architecture.input_modalities`, `architecture.output_modalities`, `pricing`, and `supported_parameters`. It does **NOT** reliably expose:
+`capabilities.ts` resolves a `ModelCapabilities` object per model by merging two sources:
 
-- whether the model supports **multi-turn conversational image editing**, or
-- the **max number of input images**, or
-- the exact **aspect-ratio / image-size** matrix.
-
-Therefore maintain a **static override table merged over inferred defaults**:
+1. The pricing/catalog list (`GET /models?output_modalities=image`) — id, name, `architecture.output_modalities`, `pricing`.
+2. The capability discovery list (`GET /images/models`) — real, provider-verified `supported_parameters` (`aspect_ratio` enum, `resolution` enum, `input_references` range).
 
 ```ts
 interface ModelCapabilities {
     id: string;
     name: string;
-    modalities: ("image" | "text")[]; // from architecture.output_modalities
-    conversational: boolean; // multi-turn image editing supported?
-    maxInputImages: number; // hard cap for attachments
-    aspectRatios: string[]; // allowed image_config.aspect_ratio
-    imageSizes: string[]; // allowed image_config.image_size
-    supportsImageConfig: boolean;
-    pricing: ModelPricing; // from API
+    outputModalities: ("image" | "text")[]; // from architecture.output_modalities
+    conversational: boolean; // = outputModalities.includes("text")
+    maxInputImages: number; // from discovery's input_references range max
+    aspectRatios: string[]; // from discovery's aspect_ratio enum
+    imageSizes: string[]; // from discovery's resolution enum
+    supportsImageConfig: boolean; // true if either list above is non-empty
+    estimated: boolean; // true only when discovery data is unavailable for this model
+    pricing: ModelPricing;
 }
 ```
 
-- **Inference defaults** (when no override):
-    - `modalities` ← `architecture.output_modalities`.
-    - `conversational` ← `output_modalities` includes `"text"` (text+image models are generally conversational; image-only are not).
-    - `maxInputImages` ← `1` if not known (conservative; overrides raise it).
-    - `aspectRatios` / `imageSizes` ← the OpenRouter shared defaults documented for image generation (1:1…21:9; 0.5K/1K/2K/4K), trimmed by overrides.
-    - `supportsImageConfig` ← true unless override says otherwise.
-- **`MODEL_CAPABILITY_OVERRIDES`**: keyed by model id and by family prefix (e.g. `google/gemini-*`, `black-forest-labs/flux*`, `microsoft/mai-image-*`, `openai/gpt-*image*`, `recraft/*`, `sourceful/*`). Hand-curate the pinned defaults and known families using the OpenRouter image-generation docs. Exact-id override wins over family override wins over inference.
-- **Pinned defaults** in the model picker (expandable to the full dynamic list): the four named examples plus any returned that match a curated pin list. Pins are display-order only; all image-output models from the live query are selectable when expanded.
-
-**OPEN-1:** The override table is the one place that needs manual curation/maintenance. Seed it from the docs at build time; treat unknown models conservatively (1 input image, no conversational, shared aspect/size set) and surface a small "capabilities estimated" note in the UI when relying purely on inference.
+No hand-curated override table — when discovery data is missing for a model (fetch failure, or a model discovery hasn't indexed yet), `capabilities.ts` falls back to a small conservative default and marks the result `estimated: true`, surfaced in the UI as a "capabilities estimated" note.
 
 ### 5.5 Cost
 
-- **Pre-send estimate:** compute from the model's `pricing` (image/request/token fields) × requested size. Image pricing is often per-image or per-megapixel; read the model's `pricing` object and estimate conservatively. The estimate for a **conversational refinement must price the full resent thread** (text + all history images), which grows each turn. Display with an explicit "estimate, may be inexact" caveat.
-- **Prompt caching:** much of a resent thread typically hits OpenRouter/provider **prompt cache at a discount**, so real cost is usually **below** the naive full-thread estimate. Treat estimates as an upper-ish bound and lean on `costActualUsd` for the source of truth.
-- **Actual cost:** read from `usage` in the response (requested via `usage.include = true`). If absent for a given image model, fall back to `GET /api/v1/generation?id=<id>` using the response id and read total cost. Persist `costActualUsd` on the sketch.
-- **Caps (§9).**
-
-**OPEN-2:** Confirm the precise pricing fields for image models against a live `GET /models` response during M1; adjust `cost.ts` accordingly.
+- **Pre-send estimate** (`estimateCost`): computed from the model's flat `pricing.image`/`pricing.request` fields when populated. Returns `null` for token-billed models or models whose cost isn't captured by these fields — `costActualUsd` is always the source of truth.
+- **Prompt caching:** a resent conversational thread typically hits the provider's prompt cache at a discount, so real cost is usually **below** the naive full-thread estimate. Estimates are shown with an explicit "may be inexact" caveat.
+- **Actual cost:** read from `usage.cost`/`usage.total_cost` in the response (`parseCostFromResponse`). If absent, fall back to `GET /api/v1/generation?id=<id>` (`fetchGenerationCost`). Persisted as `Sketch.costActualUsd`.
+- **Inline pricing display** (`formatModelPricing`, `pricingTier` in `cost.ts`): per the [Pricing Object](https://openrouter.ai/docs/guides/overview/models#pricing-object) fields, shown per-million-tokens / per-image / per-request, whichever apply; a `:free`-suffixed model id shows "Free" instead of the ambiguous zero. `pricingTier` buckets the dominant pricing dimension into a `$`/`$$`/`$$$` badge — a relative hint, not an exact cross-model comparison.
+- **Caps:** see §9.
 
 ---
 
@@ -320,7 +328,7 @@ Global assets attach per the sketch's `AttachFlags`:
 - **Style reference image** (`attach.styleRef`): added as an `image_url` part.
 - **Layout reference image** (`attach.layoutRef`): added as an `image_url` part.
 
-**Reference labeling (conversational models):** because the API gives images no semantic role, prepend explicit labels in the text, ordered to match image order. Only label what's attached. Example user text:
+**Reference labeling (conversational models):** because the API gives images no semantic role, prepend explicit labels in the text, ordered to match image order. Only label what's attached:
 
 ```
 [STYLE GUIDE]
@@ -333,28 +341,28 @@ The second attached image is a LAYOUT REFERENCE — match its composition and el
 <sketch prompt>
 ```
 
-Images array order MUST match the label order (style ref first, layout ref second). Omit a label line when its image isn't attached and shift ordering accordingly.
+Images array order matches the label order (style ref first, layout ref second). A label line is omitted when its image isn't attached.
 
 ### 6.2 Input-image count enforcement
 
 The cap applies to the **whole outgoing request** (all `image_url` parts across all messages), not just the current turn:
 
-- **Default (A):** trust the model's `maxInputImages` and enforce only per-request. Conversational models get a high override reflecting their multi-image tolerance, so normal chains pass.
-- **Fallback (B):** if a composed request would still exceed `maxInputImages`, **truncate conversation history to the most recent assistant image** before counting again.
-- **Block only as a last resort:** after truncation, if the user's explicitly attached refs (styleRef + layoutRef + parent image on i2i) still exceed the cap, block the send and tell the user to uncheck attachments. (Decision #8.2 + Q4.)
+1. Trust the model's `maxInputImages` and enforce only per-request.
+2. If a composed request would still exceed it, truncate conversation history to the most recent assistant image before counting again.
+3. If the user's explicitly attached refs (styleRef + layoutRef + parent image on i2i) still exceed the cap after truncation, block the send and tell the user to uncheck attachments.
 
 ### 6.3 Root sketch
 
-`messages` = single `user` message with `content` parts: `[text, ...attachedImages]`. `modalities` per capability.
+`messages` = single `user` message with content parts `[text, ...attachedImages]`. `modalities` per capability.
 
 ### 6.4 Refinement — conversational models
 
-Walk the chain from root to the current sketch's parent and rebuild the full thread:
+Walk the chain from root to the current sketch's parent and rebuild the full thread, resending prior assistant images so the model can edit them:
 
 ```
 [
   user(turn1 text + attached refs/images),
-  assistant(content + images: [parentResultImage]),
+  assistant(images: [parentResultImage]),
   user(turn2 refinement text + optionally re-attached refs),
   assistant(...),
   ...
@@ -362,199 +370,120 @@ Walk the chain from root to the current sketch's parent and rebuild the full thr
 ]
 ```
 
-Resend prior assistant images in history so the model can edit them. **Re-attaching style/layout refs on a refinement defaults OFF** — refs from earlier turns already persist in the resent history, so re-sending is wasteful. The user can re-check a ref on a refinement only if the style has drifted and they want to reassert it. (Q4.)
+**Re-attaching style/layout refs on a refinement defaults OFF** — refs from earlier turns already persist in the resent history.
 
 ### 6.5 Refinement — image-only fallback
 
-For non-conversational models, a refinement is a **single-step image-to-image**: one `user` message containing the refinement text + the **parent sketch's generated image** as an `image_url` part (+ any checked refs, subject to the input-image cap). `modalities: ["image"]`. The UI must show a `<!>` warning (via `Admonition.svelte`) when a non-conversational model is selected, explaining refinements lose conversation context. (Decision #4.2/#4.3.)
+For non-conversational models, a refinement is a single-step image-to-image: one `user` message containing the refinement text + the **parent sketch's generated image** as an `image_url` part (+ any checked refs, subject to the input-image cap). `modalities: ["image"]`. The UI shows a warning (`Admonition`) when a non-conversational model is selected, explaining refinements lose conversation context.
 
 ### 6.6 View source (raw request) — per card
 
-Every sketch card exposes a **"View source"** control (a `</>`-style button) that reveals the **exact request body that will be (or was) sent** for that card.
+Every sketch card exposes a **"View source"** control (`</>`) that reveals the **exact request body** for that card, produced by the **same `compose.ts` functions** the queue uses.
 
-- The body is produced by the **same `compose.ts` functions** the queue uses — never a separate code path — so what the user sees is authoritative.
-- For a `draft`/`queued` card it shows the request **as it would be sent now**; for a `done`/`error` card it shows the **snapshot of what was sent** (reconstructed from `requestSnapshot`).
-- **Image parts are elided, never raw base64**: render image parts as `{ type: "image_url", image_url: { url: "data:image/png;base64,…<2.1 MB, imageId=…>" } }`. This keeps the view readable and avoids dumping megabytes.
-- The displayed JSON **omits the `Authorization` header / API key entirely**. Headers shown (if any) are redacted.
-- Provide a **copy-to-clipboard** action on the elided JSON. Render as text only (never `innerHTML`).
-- `SketchRequestSnapshot` persists only: `model`, `modalities`, `image_config`, the composed message text, and the **image IDs** referenced per message — enough to faithfully redisplay without storing base64 twice.
+- Image parts are elided, never raw base64: `{ type: "image_url", image_url: { url: "data:image/png;base64,…<imageId=…>" } }`.
+- The `Authorization` header / API key is never shown.
+- Copy-to-clipboard action; rendered as text only (never `innerHTML`).
+- `SketchRequestSnapshot` persists only `model`, `modalities`, `image_config`, composed text, and **image IDs** — never base64.
 
 ---
 
 ## 7. State architecture (Svelte 5 runes)
 
-- **`settings.svelte.ts`** — reactive singleton holding: `apiKey` (in memory; mirrored to sessionStorage, or localStorage if "remember" opted in), `rememberKey: boolean`, `defaultModelId` (pre-fills new chains; model is chain-locked, not global), `theme`, `concurrency`, and cap values. Hydrated from storage on load.
-- **`board.svelte.ts`** — reactive board graph: the board, its chains (rows), and sketches. Exposes derived selectors: `chainsOrdered`, `sketchesByChain`, `sessionCostTotal`, `chainCostTotal(chainId)`. Mutations write through to IndexedDB (`repo.ts`) and update runes state optimistically.
-- Capability data: `availableModels: ModelCapabilities[]` plus `capabilitiesFor(modelId)` — each **chain** resolves capabilities from its locked `modelId`; the new-chain composer resolves from the pending model selection. Drives which checkboxes/resolutions are enabled and the conversational/i2i warning per row.
+- **`settings.svelte.ts`** — reactive singleton: `apiKey` (in memory; mirrored to sessionStorage, or localStorage if "remember" opted in), `rememberKey`, `theme`, `concurrency`, session cost cap. Hydrated from storage on load.
+- **`board.svelte.ts`** — reactive board graph: the board, its chains (rows), sketches, and prompt notes. Exposes derived selectors (`getChainsOrdered`, `sketchesForChain`, `getSessionCostTotal`, `chainCostTotal`) and mutations (`createChain`, `createRootSketch`, `createRefinementSketch`, `updateSketch`, `submitSketch`, `trashSketchesFrom`, `forkChain`, `addPromptNote`/`updatePromptNote`/`removePromptNote`, `sendPromptToModels`).
+- Capability data: `boardState.availableModels: ModelCapabilities[]` plus `capabilitiesFor(modelId)` — each **chain** resolves capabilities from its locked `modelId`.
 
-Persistence is **write-through**: every mutation updates runes state and the matching IndexedDB record. On load, hydrate runes from IndexedDB. Image blobs are loaded lazily and exposed as object URLs (created on mount, revoked on unmount) — never hold data URLs in reactive state long-term.
+Persistence is **write-through**: every mutation updates runes state and the matching IndexedDB record (`Object.assign` + `saveX(JSON.parse(JSON.stringify(x)))` to strip Svelte 5 reactive proxies before serialization). On load, hydrate runes from IndexedDB. Image blobs are exposed as object URLs created on mount, revoked on unmount — never held as data URLs in reactive state.
 
 ---
 
-## 8. Persistence (IndexedDB via `idb`)
+## 8. Errors
 
-DB name `tarralappu`, version 1. Object stores (all keyed by `id`):
+Per [OpenRouter's errors-and-debugging reference](https://openrouter.ai/docs/api/reference/errors-and-debugging), `client.ts`'s `OpenRouterApiError` covers both:
 
-| Store      | Key  | Indexes                          |
-| ---------- | ---- | -------------------------------- |
-| `boards`   | `id` | —                                |
-| `chains`   | `id` | `boardId`, `order`               |
-| `sketches` | `id` | `chainId`, `parentSketchId`      |
-| `images`   | `id` | `role`                           |
-| `settings` | `id` | single `app` record (key, prefs) |
+- **Request-level failures** (non-2xx HTTP status) — parsed from the `{ error: { code, message, metadata } }` body, with `Retry-After` respected.
+- **In-band failures** (HTTP 200, but `choices[0].error` is present) — generation failed mid-flight even though the request itself was valid.
 
-Rules:
-
-- Store generated/reference images as **`Blob`** in `images` (convert from the response data URL immediately). Never store multi-MB data URLs in `localStorage`.
-- API key: **sessionStorage** by default. If `rememberKey` is checked (with the danger admonition shown), persist to **localStorage**. Never put the key in IndexedDB.
-- On board load, recreate object URLs for visible images; revoke on teardown to avoid leaks.
-- **Never persist raw base64 request bodies.** `requestSnapshot` stores params + composed text + referenced image **IDs** only (§6.6); image bytes live once, in `images`.
-- **Image deletion is refcount-aware.** Forks share `StoredImage` IDs, so trashing a sketch decrements `refCount` and deletes the blob only when it reaches 0. Reference images are also refcounted (a global ref used by many sketches survives until none reference it).
-- Provide an explicit **"clear board"** / **"delete image"** path; trashing a sketch cascades to its descendants (§11 Card actions) and decrements image refcounts accordingly.
+`humanizeError()` maps the typed `error_type` (rate limits, content policy, image errors, context length, etc.) to a plain-language message; `rawErrorDetails()` returns the pretty-printed raw body for the "View raw response" toggle on error cards. Local/synthetic errors (no API key set, cost cap exceeded, too many reference images) have no raw body (`errorRaw: null`).
 
 ---
 
 ## 9. Queue, concurrency, cost caps (`queue/queue.ts`)
 
 - A promise-based queue with a **configurable concurrency cap** (default **2**, user-adjustable in settings).
-- A job = `{ sketchId }`. Lifecycle drives `Sketch.status`: `queued → generating → done | error`.
+- A job = `{ id, run }`. Lifecycle drives `Sketch.status`: `queued → generating → done | error`.
 - **Retry** re-enqueues the same sketch (status back to `queued`), reusing/rebuilding the request.
-- **Cost gating before dispatch:**
-    - Compute `costEstimateUsd`.
-    - If `sessionCostCapUsd != null` and `sessionCostTotal + estimate > cap` → block, mark card `error` with a "session cost cap would be exceeded" message (not auto-retried).
-    - Same check against the sketch's chain `chainCostCapUsd`.
-    - Always show the "estimates may be inexact" caveat near caps.
+- **Cost gating before dispatch:** compute `costEstimateUsd`; if it would push the session or chain cost cap over the limit, block with an `error` status (not auto-retried). Always show the "estimates may be inexact" caveat near caps.
 - After success, record `costActualUsd`; totals recompute via derived selectors.
-- **Cancellation.** Every job holds an `AbortController`. **Trashing a `queued` or `generating` card cancels its job** — abort the in-flight `fetch` (or drop it from the queue), discard any partial result, and proceed with the trash. A cancelled job records no cost.
-- **No streaming** — single request/response; show a generating state until the image arrives.
+- **Cancellation.** Every job holds an `AbortController`. **Trashing a `queued` or `generating` card cancels its job** — the fetch aborts, no cost is recorded, and the sketch is removed. There's no standalone "cancel" button; trashing is the only cancel path.
+- **No streaming** — single request/response.
 
 ---
 
-## 10. Per-card states & errors (`SketchCard.svelte`)
-
-States: `draft` (editable, not yet sent), `queued`, `generating` (spinner + aria-live), `done` (image + actual cost), `error` (message + **Retry**).
-
-Map common failures to clear messages:
-
-| Condition | Message |
-| --- | --- |
-| 401 | Invalid or missing API key. |
-| 402 | Insufficient OpenRouter credits. |
-| 429 | Rate limited — will retry / try again shortly. |
-| Response without `images` | Model returned no image. Try a different prompt or model. |
-| Input images > capability | Too many references for this model — uncheck some (blocking). |
-| Cost cap would exceed | Session/chain cost cap would be exceeded. |
-
-`aria-live="polite"` region announces status transitions. Errors are focusable.
-
----
-
-## 11. Layout & UI
+## 10. Layout & UI
 
 ### Structure
 
-- **SetupBar** (top, sticky): API key panel, theme toggle, **CostMeter** (session total vs cap), concurrency setting. (No model picker here — model is chain-locked, chosen per chain.)
-- **Global authoring panel:** StyleDocPanel (textarea) + ReferenceImages (style ref + layout ref upload/preview/remove). Uploads are **MIME-validated** (accept PNG/JPEG/WebP only, reject others) and stored/sent at **full resolution — no downscaling** (request size is bounded only by the model's own input limits).
-- **Board:** vertical stack of **Chains**. Each **Chain is a ROW**: the root sketch on the left, refinements extending **to the right**; a **"+ New Sketch"** control adds a new root (new row). Creating a new chain opens a composer containing the **ModelPicker** (pinned defaults + expand-all + text filter, pre-filled from `defaultModelId`); the chosen model is **locked for that row** and shown as a row label/badge. A refine control sits at the right end of each row (enabled only once the rightmost card is `done`). Per-row cost cap input + chain cost total.
+- **SetupBar** (top, sticky): API key panel, theme toggle, CostMeter (session total vs cap), concurrency setting. No model picker here — model is chain-locked, chosen per chain.
+- **Style & References shelf** (collapsible): StyleDocPanel + ReferenceImages + SessionCapPanel, each in a tinted `NotePanel`.
+- **Prompt Board shelf** (collapsible, collapsed by default): a horizontally-scrolling row of scratch-note cards (`PromptBoard.svelte`), each with a free-text box, copy-to-clipboard, remove, and "send to models" (opens `SendToDialog.svelte` — grouped/priced/filterable checkbox list; confirming spawns one new draft chain per checked model).
+- **Board:** vertical stack of **Chains**. Each **Chain is a ROW**: root sketch on the left, refinements extending right; **"+ New Sketch"** adds a new root (new row) via `NewChainComposer` (contains `ModelPicker` — grouped by creator, priced, filterable). The chosen model is locked for that row. A refine control sits at the row's right end once the rightmost card is `done`. Per-row cost cap input + chain cost total.
 
 ### Sketch card contents
 
-- Prompt textarea.
-- **AttachmentChecks**: "Attach Style Description", "Attach Style Reference", "Attach Layout Reference" — each disabled if the corresponding global asset is absent; checking beyond `maxInputImages` is blocked with inline explanation.
-- **ResolutionControls**: aspect-ratio + size selectors, populated **only** with the current model's allowed values; invalid combos impossible to select.
-- **View source** (`</>`) button revealing the raw request body for this card (§6.6).
-- **Trash** (cascade) and **Refresh** (fork/re-roll) buttons — see Card actions below.
-- Generate/Refine button, status, result image, estimated/actual cost. **Retry** appears only on `error` cards.
+- Prompt textarea (draft/error cards only — immutable once `done`).
+- **AttachmentChecks**: attach style description / style ref / layout ref, each disabled if the asset is absent; checking beyond `maxInputImages` is blocked.
+- **ResolutionControls**: aspect-ratio + size selectors, populated only with the model's allowed values.
+- **View source** (`</>`), **Trash** (cascade), **Refresh** (fork), **Retry** (error cards).
+- Generate/Refine button, status, result image (with zoom via `Lightbox`), estimated/actual cost.
 
 ### Card actions: trash (cascade) & fork (re-roll)
 
-Completed sketches are **immutable** — you never edit a generated card in place. Two actions branch or prune the tree:
+Completed sketches are **immutable**.
 
-- **Trash (cascade).** Trashing a card removes that card **and all descendants to its right** in the row (chain `1→2→3→4`: trash `4` removes `4`; trash `2` removes `2,3,4`; trash the root removes the whole row/chain). Flow: click trash → the card and every doomed descendant get a **"pending-trash" style** (e.g. dimmed + red outline) so the blast radius is visible → explicit **confirm** click commits; anything else cancels. Trashing a card that is `queued`/`generating` **cancels its job** (§9) before removal. Deletion decrements image `refCount`s (§8); shared-with-a-fork images survive.
-- **Fork (re-roll via Refresh).** The Refresh button forks the chain **up to that card** into a **new row**: ancestors `root…parent(card)` are copied as new sketch rows that **reuse the originals' images** (shared `StoredImage` IDs, refcount++), and the forked position becomes a **new editable `draft`** pre-filled with that card's prompt/attachments. The user tweaks the prompt and clicks Generate to produce the variation **in the new fork**; the original chain is untouched. The new chain inherits the source chain's locked model and records `forkedFrom`. This is the immutable-safe way to "try again differently" (leaving the prompt unchanged simply re-rolls a variation).
+- **Trash (cascade).** Removes the card **and all descendants to its right** in the row. A "pending-trash" style previews the blast radius before an explicit confirm click. Cancels any in-flight job first; decrements image refcounts.
+- **Fork (Refresh).** Forks the chain **up to that card** into a **new row**: ancestors are copied reusing the originals' images (refcount++), and the forked position becomes a new editable draft pre-filled with that card's prompt/attachments. The new chain records `forkedFrom` and inherits the source chain's model.
 
-**Retry vs Refresh:** _Retry_ (error cards only) re-enqueues the **same** request on the **same** card. _Refresh_ (done cards) **forks** into a new row with an editable draft. They are distinct controls.
-
-### Sticky-note aesthetic
-
-- Paper-like cards (subtle texture, soft shadow, slight tape/pin accent). **Keep rotation minimal and decorative only** — never rotate text enough to harm readability. **No handwriting font for body/UI text**; an accent display font may be used for headings only if it still meets contrast and legibility. Respect `prefers-reduced-motion` (no wobble/animation when set).
+**Retry** (error cards) re-enqueues the same request on the same card. **Refresh** (done cards) forks into a new row with an editable draft — distinct controls.
 
 ---
 
-## 12. Theme system
+## 11. Theme system
 
-- CSS custom properties in `app.css`; `:root[data-theme="light"]` and `:root[data-theme="dark"]` token sets.
-- Default from `prefers-color-scheme`; manual **ThemeToggle** overrides and persists choice in `localStorage`.
-- Both themes must meet **WCAG 2.2 AA** contrast (≥ 4.5:1 text, ≥ 3:1 large text/UI). Sticky-note colours chosen so foreground text passes in both modes.
+- CSS custom properties in `app.css`; `:root[data-theme="light"]` and `:root[data-theme="dark"]` token sets, plus a `prefers-color-scheme` media-query default.
+- Manual `ThemeToggle` override persists in `localStorage`.
+- Both themes meet WCAG 2.2 AA contrast (≥ 4.5:1 text, ≥ 3:1 large text/UI).
 
 ---
 
-## 13. Accessibility (WCAG 2.2 AA)
+## 12. Accessibility (WCAG 2.2 AA)
 
-- All controls keyboard-operable; visible focus indicators; logical tab order.
-- Checkboxes/labels properly associated; image uploads have labels and previews have `alt`.
-- Status updates via `aria-live`; errors announced and focusable.
-- Generated images get meaningful `alt` (e.g. the prompt text, truncated).
-- Colour never the sole signal (status uses icon + text).
+See [`.github/instructions/a11y.instructions.md`](../.github/instructions/a11y.instructions.md) for the full rule set. Highlights specific to this app:
+
+- Status updates via `aria-live`; errors announced and focusable (`role="alert"`).
+- Generated images get meaningful `alt` (prompt text, truncated).
+- Colour never the sole signal (status uses icon + text; pricing tier uses `$`/`$$`/`$$$` text, not colour alone).
 - Respect `prefers-reduced-motion`.
 - Run the `Accessibility Ally` agent before release.
 
 ---
 
-## 14. Security
+## 13. Security
 
-- Client-only; user's key sent directly to OpenRouter. **Never** log the key; never put it in IndexedDB or in `requestSnapshot`.
-- Default sessionStorage; localStorage only on explicit opt-in with a **danger admonition** spelling out XSS/persistence risk.
-- No third-party scripts beyond the build's own bundle (reduces XSS surface that could exfiltrate the key).
-- Generated content rendered as images from Blobs; never `innerHTML` model text — render as text only. The **View source** panel (§6.6) is text-only and redacts the key.
-- `requestSnapshot` and the View-source output must **omit** the `Authorization` header / key, and must **elide image base64** rather than persist or display it.
-- Validate uploaded reference images by **MIME** (PNG/JPEG/WebP only); they are stored and sent at **full resolution** (no downscaling, per decision).
-
----
-
-## 15. Template cleanup (part of v1)
-
-Rewrite to describe Tarralappu (no "Peruskivi" language left):
-
-- `README.md` — what it is, screenshots, local dev (`bun install`, `bun run dev`), build/deploy, "bring your own OpenRouter key" note, link to Silmärin docs at `https://lumikeiju.dev/silmarin/tarralappu/`.
-- `AGENTS.md` — replace the template "Repo identity" with Tarralappu's; keep the conventions section; set apex mode = **standalone/external**, slug `tarralappu`.
-- `CHANGELOG.md` — start at `0.1.0` with the v1 feature set.
-- `package.json` — `name`, `description`, `version` 0.1.0, scripts (§2).
-- Add `.github/workflows/deploy.yml` building with Bun and publishing `dist/` to GitHub Pages (base `/tarralappu/`).
-- Register the project as `external` on the apex registry (manual, out of this repo).
+- Client-only; the user's key is sent directly to OpenRouter. **Never** logged; never stored in IndexedDB or in `requestSnapshot`.
+- Default sessionStorage; localStorage only on explicit opt-in with a danger admonition (XSS/persistence risk).
+- No third-party scripts beyond the build's own bundle.
+- Generated content rendered as images from Blobs; model text never rendered via `innerHTML`. The View-source panel is text-only and redacts the key.
+- Reference images validated by MIME (PNG/JPEG/WebP only); stored and sent at full resolution (no downscaling).
 
 ---
 
-## 16. Build order (milestones)
-
-Each milestone is independently committable (Conventional Commits) and leaves the app runnable.
-
-- **M0 — Scaffold.** Vite+Svelte+TS, base path, Prettier/svelte-check, Pages workflow, template cleanup (§15). App renders an empty themed shell.
-- **M1 — Key + models.** API key panel (sessionStorage + remember opt-in + danger admonition). Model discovery via the **public** `/models` (no key needed), capability map + overrides, model picker (pins + expand-all + filter). Verify pricing fields live (OPEN-2).
-- **M2 — Authoring + persistence.** StyleDocPanel, ReferenceImages, IndexedDB schema/repo, image Blob storage, write-through state, hydrate on load.
-- **M3 — Root generation.** One root sketch, no attachments, end-to-end: compose → send → parse → store image → display. Per-card states.
-- **M4 — Attachments + resolution.** Checkboxes (style doc/ref/layout) with capability gating, reference labeling, input-image cap enforcement, model-aware ResolutionControls.
-- **M5 — Chains + refinement + branching.** Rows with **chain-locked model** (ModelPicker in the new-chain composer), conversational thread rebuild, image-only i2i fallback + `<!>` warning, refine control. **Trash (cascade) with pending-trash preview + confirm**, and **Refresh = fork-to-new-row** with editable draft and shared (refcounted) ancestor images.
-- **M6 — Queue.** Concurrency-capped runner, queued/generating transitions, retry.
-- **M7 — Cost.** Pre-send estimate, actual cost from usage/generation endpoint, session + chain caps with gating, CostMeter, inexact-estimate caveats.
-- **M8 — Theme + a11y.** Sticky-note styling both themes, reduced-motion, full a11y pass (Accessibility Ally), contrast checks.
-- **M9 — Polish.** Error-message coverage, empty/loading states, delete/clear flows, README screenshots, CHANGELOG finalise.
-
----
-
-## 17. Out of scope (v1 and/or forever)
+## 14. Out of scope
 
 - **Free / draggable canvas — never.**
 - Backend, multi-user, accounts, server-side key storage — never.
-- Streaming responses (v1).
-- **Per-card model choice** — model is chain-locked in v1; per-card is a _maybe_ later (high complexity).
-- **Per-chain style docs / reference images** — style doc and refs are global in v1; per-chain is in scope but post-MVP.
-- Multiple boards/projects UI (data model allows it; v1 ships a single board).
-- Export/import of boards (candidate for v1.1).
-
----
-
-## 18. Open items to confirm during build
-
-- **OPEN-1:** Curate `MODEL_CAPABILITY_OVERRIDES` from the OpenRouter image-gen docs; conservative fallback for unknown models + a "capabilities estimated" UI hint.
-- **OPEN-2:** Confirm exact image pricing fields and the `usage.include` / `GET /generation` cost path against live responses in M1; finalise `cost.ts`.
+- Streaming responses.
+- **Per-card model choice** — model is chain-locked; per-card is a possible future addition.
+- **Per-chain style docs / reference images** — style doc and refs are global; per-chain is a possible future addition.
+- Multiple boards/projects UI (data model allows it; the app ships a single board).
+- Export/import of boards.

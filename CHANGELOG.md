@@ -4,11 +4,17 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.6.1 (2026-07-03)
+
+### Fixes
+
+- Miscellaneous code and documentation updates and cleanups
+
 ## v1.6.0 (2026-07-03)
 
 ### Features
 
-- Prompt Board notes can now be "sent to" models: a new send button on each note opens a dialog listing every image model (grouped by creator, with pricing and cost-tier badges, filterable, with Select All/Clear). Confirming creates one new chain per checked model, each pre-filled with the note's text as an editable DRAFT sketch — so aspect ratio, image size, and model choice can still be adjusted per chain before the user explicitly clicks Generate.
+- Prompt Board notes can now be "sent to" models: a new send button on each note opens a dialog listing every image model (grouped by creator, with pricing and cost-tier badges, filterable, with a Clear-selection button). Confirming creates one new chain per checked model, each pre-filled with the note's text as an editable DRAFT sketch — so aspect ratio, image size, and model choice can still be adjusted per chain before the user explicitly clicks Generate.
 
 ## v1.5.0 (2026-07-03)
 
