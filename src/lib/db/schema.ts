@@ -54,6 +54,7 @@ export interface SketchRequestSnapshot {
     background?: string;
   };
   provider?: { reasoning_effort?: "low" | "medium" | "high" };
+  stream: boolean;
   messages: Array<{
     role: "user" | "assistant";
     text: string;
@@ -74,6 +75,8 @@ export interface Sketch {
   /** Only for models without aspect_ratio/resolution support (e.g. GPT image models) */
   quality: string | null;
   background: string | null;
+  /** Request partial-preview streaming (`stream: true`) — only offered for models with `ModelCapabilities.supportsStreaming`. */
+  streamEnabled: boolean;
   reasoningEffort: "low" | "medium" | "high" | null;
   status: SketchStatus;
   error: string | null;

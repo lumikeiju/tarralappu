@@ -4,11 +4,23 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.7.1 (2026-07-04)
+
+### Fixes
+
+- Corrected the "Stream" checkbox added in v1.7.0, after live-testing against the real API disproved its two premises: (1) the "+$" cost-warning badge implied streaming itself adds cost — live testing (with and without an OpenAI `partial_images` parameter, which OpenRouter's `/chat/completions` silently ignores for this model) showed no cost difference, so the badge was removed; (2) the checkbox's hint promised a live partial-image preview, but OpenAI's GPT image models send the finished image as a single chunk right at the end of generation via this API surface regardless of `stream`/`partial_images` — there's no incremental data to preview. The checkbox's hint now describes its one confirmed real benefit: streamed requests can be cancelled server-side (stopping billing immediately when a generating card is trashed), per [OpenRouter's stream cancellation docs](https://openrouter.ai/docs/api/reference/streaming) (OpenAI is a supported provider); non-streaming requests keep billing to completion even if the client aborts.
+
+## v1.7.0 (2026-07-04)
+
+### Features
+
+- Added a "Stream" checkbox in `ResolutionControls` for models OpenRouter's image model discovery marks `supports_streaming: true` for (currently OpenAI's GPT image models). Checking it sends the generation request with `stream: true` over SSE instead of a single buffered response, and shows a live partial-image preview in place of the usual skeleton while a sketch is generating. The checkbox carries a "+$" badge (with an adjacent text hint, not color-only) warning that streaming may add provider cost for partial frames, per [OpenAI's docs on partial-image streaming cost](https://developers.openai.com/api/docs/guides/image-generation). Note: OpenRouter documents the general chat-completions SSE chunk format for text (`delta.content`) but not the exact shape of image deltas specifically — this best-effort-reads a `delta.images[]` field per chunk for the live preview; if a provider never populates it, streaming still completes correctly, it just won't show partial previews. New `Sketch.streamEnabled` field (additive) carries the choice through generation, refinement, and forking.
+
 ## v1.6.2 (2026-07-04)
 
 ### Fixes
 
-- OpenAI's GPT image models (`gpt-5-image`, `gpt-5-image-mini`, `gpt-5.4-image-2`) stopped exposing the Aspect/Size controls once model capabilities started coming from OpenRouter's real Image API discovery data. That discovery endpoint describes OpenRouter's separate, stateless *dedicated Image API* surface, not the `/chat/completions`-based conversational image generation this app actually uses — these three models generate images through an LLM tool call (per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/): "GPT 5 and 5.4 versions generate images through an LLM, so they don't provide access to the full set of supported parameters") and never supported aspect_ratio/resolution there in the first place. Restored the Aspect/Size controls for exactly these three models (independent of what discovery reports), and added Quality/Background selects (which discovery *does* confirm for them) so `ResolutionControls` now renders each control independently based on what a model actually supports, rather than assuming every model has all of them. New `Sketch.quality`/`Sketch.background` fields (nullable, additive) carry the choice through generation, refinement, and forking.
+- OpenAI's GPT image models (`gpt-5-image`, `gpt-5-image-mini`, `gpt-5.4-image-2`) stopped exposing the Aspect/Size controls once model capabilities started coming from OpenRouter's real Image API discovery data. That discovery endpoint describes OpenRouter's separate, stateless _dedicated Image API_ surface, not the `/chat/completions`-based conversational image generation this app actually uses — these three models generate images through an LLM tool call (per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/): "GPT 5 and 5.4 versions generate images through an LLM, so they don't provide access to the full set of supported parameters") and never supported aspect_ratio/resolution there in the first place. Restored the Aspect/Size controls for exactly these three models (independent of what discovery reports), and added Quality/Background selects (which discovery _does_ confirm for them) so `ResolutionControls` now renders each control independently based on what a model actually supports, rather than assuming every model has all of them. New `Sketch.quality`/`Sketch.background` fields (nullable, additive) carry the choice through generation, refinement, and forking.
 
 ## v1.6.1 (2026-07-03)
 

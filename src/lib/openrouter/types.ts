@@ -90,6 +90,8 @@ export interface ModelCapabilities {
   quality: string[];
   background: string[];
   supportsImageConfig: boolean;
+  /** From discovery's `supports_streaming` — lets the request set `stream: true`. */
+  supportsStreaming: boolean;
   /** true when capabilities were inferred from defaults, not from a curated override */
   estimated: boolean;
   pricing: ModelPricing;
@@ -120,7 +122,7 @@ export interface CompletionRequest {
   provider?: {
     reasoning_effort?: "low" | "medium" | "high";
   };
-  stream: false;
+  stream: boolean;
   usage: { include: true };
 }
 
@@ -159,4 +161,36 @@ export interface CompletionResponse {
   id: string;
   choices: CompletionChoice[];
   usage?: CompletionUsage;
+}
+
+// Streaming (SSE) chunk shapes for `stream: true` requests. `delta.content`
+// mirrors the standard OpenAI-style streaming text field; `delta.images` is
+// a best-effort extension of that same pattern to the `message.images[]`
+// field this app already reads from non-streaming responses — OpenRouter
+// doesn't document the exact streaming shape for image deltas via
+// /chat/completions, so this is treated as additive/optional and never
+// assumed to be present.
+export interface CompletionChunkDelta {
+  role?: MessageRole;
+  content?: string | null;
+  images?: CompletionImageItem[];
+}
+
+export interface CompletionChunkChoice {
+  index: number;
+  delta: CompletionChunkDelta;
+  finish_reason: string | null;
+}
+
+export interface CompletionChunk {
+  id: string;
+  choices: CompletionChunkChoice[];
+  usage?: CompletionUsage;
+  /**
+   * Mid-stream provider error — HTTP status stays 200 once headers are sent,
+   * so errors after the first chunk arrive as a normal chunk with this field
+   * set and `choices[0].finish_reason === "error"`. See
+   * https://openrouter.ai/docs/api/reference/streaming
+   */
+  error?: OpenRouterErrorDetail;
 }

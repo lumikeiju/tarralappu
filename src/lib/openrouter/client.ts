@@ -1,6 +1,9 @@
 import type {
   CompletionRequest,
   CompletionResponse,
+  CompletionChunk,
+  CompletionImageItem,
+  CompletionUsage,
   ModelListResponse,
   ImageModelDiscoveryResponse,
   OpenRouterErrorBody,
@@ -174,6 +177,123 @@ export async function chatCompletion(
   }
 
   return json;
+}
+
+/** Callbacks for observing a streamed generation as chunks arrive. */
+export interface StreamCallbacks {
+  /** Called whenever the accumulated image list grows, for a live preview. */
+  onImages?: (images: CompletionImageItem[]) => void;
+}
+
+/**
+ * Streaming (`stream: true`) variant of chatCompletion(), for models with
+ * `ModelCapabilities.supportsStreaming`. Returns the same CompletionResponse
+ * shape as the non-streaming call once the stream ends, so callers don't
+ * need a separate code path for storing images/parsing cost.
+ *
+ * OpenRouter documents the general SSE chunk format for text
+ * (`choices[0].delta.content`, see
+ * https://openrouter.ai/docs/api/reference/streaming) but not the shape of
+ * image deltas specifically. This best-effort-parses `delta.images[]` (the
+ * natural analog of the non-streaming `message.images[]` field) for live
+ * partial previews via `onImages` — if a provider never sends that field,
+ * streaming still works, it just behaves like a slower non-streaming call
+ * with no partial preview.
+ */
+export async function chatCompletionStream(
+  body: CompletionRequest,
+  apiKey: string,
+  signal: AbortSignal | undefined,
+  callbacks: StreamCallbacks = {}
+): Promise<CompletionResponse> {
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": SITE_URL,
+      "X-Title": SITE_NAME
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    throw await apiErrorFromResponse(res);
+  }
+  if (!res.body) {
+    throw new Error("Streaming response has no body");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let id = "";
+  let content = "";
+  const images: CompletionImageItem[] = [];
+  let finishReason: string | null = null;
+  let usage: CompletionUsage | undefined;
+  let midStreamError: OpenRouterErrorDetail | null = null;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lineEnd: number;
+      while ((lineEnd = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, lineEnd).trim();
+        buffer = buffer.slice(lineEnd + 1);
+        // Blank lines separate SSE events; lines starting with ":" are
+        // keepalive comments (e.g. "OPENROUTER PROCESSING") — both ignored.
+        if (!line || line.startsWith(":") || !line.startsWith("data: ")) {
+          continue;
+        }
+        const data = line.slice("data: ".length);
+        if (data === "[DONE]") continue;
+
+        let chunk: CompletionChunk;
+        try {
+          chunk = JSON.parse(data) as CompletionChunk;
+        } catch {
+          continue; // malformed/partial chunk — skip rather than crash
+        }
+
+        if (chunk.id) id = chunk.id;
+        if (chunk.usage) usage = chunk.usage;
+        if (chunk.error) midStreamError = chunk.error;
+
+        const choice = chunk.choices?.[0];
+        if (choice?.delta?.content) content += choice.delta.content;
+        if (choice?.delta?.images?.length) {
+          choice.delta.images.forEach((img, i) => (images[i] = img));
+          callbacks.onImages?.([...images]);
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const response: CompletionResponse = {
+    id,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: content || null, images },
+        finish_reason: finishReason
+      }
+    ],
+    usage
+  };
+
+  if (midStreamError) {
+    throw apiErrorFromChoiceError(midStreamError, response);
+  }
+
+  return response;
 }
 
 /**

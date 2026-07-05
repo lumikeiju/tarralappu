@@ -2,6 +2,7 @@
     import type { Sketch, Chain } from "../lib/db/schema";
     import {
         boardState,
+        streamingPreviews,
         updateSketch,
         submitSketch,
         capabilitiesFor,
@@ -196,6 +197,7 @@
             quality={sketch.quality}
             background={sketch.background}
             reasoningEffort={sketch.reasoningEffort}
+            streamEnabled={sketch.streamEnabled}
             capabilities={caps}
             onChange={(updates) => void updateSketch(sketch.id, updates)}
         />
@@ -219,7 +221,15 @@
             class="image-skeleton skeleton"
             style="aspect-ratio: {arCss(sketch.aspectRatio || '1:1')}"
             aria-hidden="true"
-        ></div>
+        >
+            {#if streamingPreviews[sketch.id]?.length}
+                <img
+                    src={streamingPreviews[sketch.id].at(-1)}
+                    alt=""
+                    class="stream-preview-img"
+                />
+            {/if}
+        </div>
     {:else}
         <!-- Done / any other state: expandable caption above image -->
         <details class="prompt-details">
@@ -437,9 +447,19 @@
 
     /* Image skeleton placeholder */
     .image-skeleton {
+        position: relative;
         width: 100%;
         min-height: 60px;
         border-radius: 3px;
+        overflow: hidden;
+    }
+    /* Live partial-image preview while a streamed generation is in flight */
+    .stream-preview-img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.85;
     }
 
     /* Result image — photo pinned to note */

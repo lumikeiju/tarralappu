@@ -35,6 +35,7 @@ import { resolveAllCapabilities } from "../openrouter/capabilities";
 import type { ModelCapabilities } from "../openrouter/types";
 import {
   chatCompletion,
+  chatCompletionStream,
   humanizeError,
   rawErrorDetails,
   fetchGenerationCost
@@ -54,6 +55,12 @@ export const boardState = $state({
   modelsLoading: false,
   modelsError: null as string | null
 });
+
+// Live partial-image preview data URLs per sketch, only populated while a
+// streamed (`stream: true`) generation is in flight. Not persisted — cleared
+// as soon as the job finishes (success or error), since the final images end
+// up in `Sketch.resultImageIds` via IndexedDB like any other generation.
+export const streamingPreviews = $state<Record<ID, string[]>>({});
 
 // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +273,7 @@ export async function createRootSketch(
     imageSize: board?.settings.defaultImageSize ?? "1K",
     quality: null,
     background: null,
+    streamEnabled: false,
     reasoningEffort: null,
     status: "draft",
     error: null,
@@ -308,6 +316,7 @@ export async function createRefinementSketch(
     imageSize: parent.imageSize,
     quality: parent.quality,
     background: parent.background,
+    streamEnabled: parent.streamEnabled,
     reasoningEffort: parent.reasoningEffort,
     status: "draft",
     error: null,
@@ -438,11 +447,15 @@ async function runGeneration(
       return;
     }
 
-    const response = await chatCompletion(
-      composed.body,
-      apiKey,
-      controller.signal
-    );
+    const response = composed.body.stream
+      ? await chatCompletionStream(composed.body, apiKey, controller.signal, {
+          onImages: (images) => {
+            streamingPreviews[sketchId] = images.map(
+              (img) => img.image_url.url
+            );
+          }
+        })
+      : await chatCompletion(composed.body, apiKey, controller.signal);
 
     if (!response.choices?.[0]?.message?.images?.length) {
       await updateSketch(sketchId, {
@@ -486,6 +499,8 @@ async function runGeneration(
       error: humanizeError(e),
       errorRaw: rawErrorDetails(e)
     });
+  } finally {
+    delete streamingPreviews[sketchId];
   }
 }
 
@@ -575,6 +590,7 @@ export async function forkChain(
     source?.imageSize ?? boardState.board?.settings.defaultImageSize ?? "1K";
   const sourceQuality = source?.quality ?? null;
   const sourceBackground = source?.background ?? null;
+  const sourceStreamEnabled = source?.streamEnabled ?? false;
   const sourceReasoningEffort = source?.reasoningEffort ?? null;
 
   // Collect ancestors (order < atSketchOrder) and JSON-roundtrip them to strip
@@ -617,6 +633,7 @@ export async function forkChain(
     imageSize: sourceImageSize,
     quality: sourceQuality,
     background: sourceBackground,
+    streamEnabled: sourceStreamEnabled,
     reasoningEffort: sourceReasoningEffort,
     status: "draft",
     error: null,
