@@ -9,6 +9,7 @@
     import NotePanel from "./components/NotePanel.svelte";
     import PromptBoard from "./components/PromptBoard.svelte";
     import Board from "./components/Board.svelte";
+    import Footer from "./components/Footer.svelte";
 
     let ready = $state(false);
     let authoringOpen = $state(true);
@@ -38,8 +39,8 @@
 <a href="#main-content" class="skip-link">Skip to main content</a>
 <SetupBar />
 
-{#if ready}
-    <main id="main-content">
+<main id="main-content">
+    {#if ready}
         <!-- Global authoring panel -->
         <details
             class="authoring-panel"
@@ -97,15 +98,20 @@
         </details>
 
         <Board />
-    </main>
-{:else}
-    <div class="loading-screen" aria-live="polite" aria-busy="true">
-        <span class="spinner" aria-hidden="true"></span>
-        <span>Loading…</span>
-    </div>
-{/if}
+    {:else}
+        <div class="loading-screen" aria-live="polite" aria-busy="true">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Loading…</span>
+        </div>
+    {/if}
+</main>
+
+<Footer />
 
 <style>
+    main {
+        flex: 1;
+    }
     .skip-link {
         position: absolute;
         left: -9999px;
@@ -139,6 +145,7 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        transition: background 0.1s;
     }
     .authoring-toggle::-webkit-details-marker {
         display: none;
@@ -148,6 +155,9 @@
         font-size: 0.625rem;
         color: var(--clr-text-3);
         transition: transform 0.15s;
+    }
+    .authoring-toggle:hover {
+        background: var(--clr-surface-2);
     }
     details[open] .authoring-toggle::before {
         transform: rotate(90deg);

@@ -4,6 +4,20 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.8.0 (2026-07-04)
+
+### Features
+
+- Added a page footer (new `Footer.svelte`, a proper `<footer>` landmark) with a short privacy note ("runs entirely in your browser — prompts, images, and your API key stay on this device") and a link to the GitHub repo, plus the current version number. Added a second, icon-only GitHub link in the header for visibility without scrolling.
+
+### Fixes
+
+- The loading screen (shown before the board finishes initializing) had no `<main>` landmark at all, temporarily breaking the skip-link's target and the page's landmark structure. `<main id="main-content">` now always exists; the ready/loading branches render inside it instead of replacing it.
+
+### Polish
+
+- Collapsible "Style & References" / "Prompt Board" section headers now show a hover background, matching the affordance every other interactive control in the app already has.
+
 ## v1.7.1 (2026-07-04)
 
 ### Fixes
