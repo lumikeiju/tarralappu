@@ -7,6 +7,7 @@
         quality?: string;
         background?: string;
         reasoningEffort?: "low" | "medium" | "high" | null;
+        streamEnabled?: boolean;
     }
 
     const {
@@ -15,6 +16,7 @@
         quality,
         background,
         reasoningEffort,
+        streamEnabled,
         capabilities,
         onChange
     }: {
@@ -23,15 +25,21 @@
         quality: string | null;
         background: string | null;
         reasoningEffort: "low" | "medium" | "high" | null;
+        streamEnabled: boolean;
         capabilities: ModelCapabilities | undefined;
         onChange: (updates: ResolutionUpdate) => void;
     } = $props();
+
+    const uid = $props.id();
 
     const aspectRatios = $derived(capabilities?.aspectRatios ?? []);
     const imageSizes = $derived(capabilities?.imageSizes ?? []);
     const qualities = $derived(capabilities?.quality ?? []);
     const backgrounds = $derived(capabilities?.background ?? []);
-    const show = $derived(capabilities?.supportsImageConfig ?? false);
+    const canStream = $derived(capabilities?.supportsStreaming ?? false);
+    const show = $derived(
+        (capabilities?.supportsImageConfig ?? false) || canStream
+    );
     const isReasoningModel = $derived(
         capabilities?.id === "openai/gpt-5.4-image-2"
     );
@@ -139,6 +147,30 @@
                 </select>
             </label>
         {/if}
+
+        {#if canStream}
+            <div class="stream-control">
+                <label class="check-label">
+                    <input
+                        type="checkbox"
+                        checked={streamEnabled}
+                        onchange={(e) =>
+                            onChange({
+                                streamEnabled: (e.target as HTMLInputElement)
+                                    .checked
+                            })}
+                        aria-describedby="{uid}-stream-hint"
+                    />
+                    Stream
+                </label>
+                <p id="{uid}-stream-hint" class="stream-hint">
+                    Lets trashing a generating card stop billing immediately
+                    instead of finishing in the background. This model sends the
+                    finished image in one piece near the end regardless, so no
+                    partial preview is available.
+                </p>
+            </div>
+        {/if}
     </div>
 {/if}
 
@@ -161,5 +193,29 @@
         width: auto;
         font-size: 0.8125rem;
         padding: 2px 6px;
+    }
+    .stream-control {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+    }
+    .check-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--clr-text-2);
+        cursor: pointer;
+    }
+    .check-label input[type="checkbox"] {
+        width: auto;
+        cursor: inherit;
+    }
+    .stream-hint {
+        font-size: 0.75rem;
+        color: var(--clr-text-3);
+        margin: 0 0 0 22px;
     }
 </style>

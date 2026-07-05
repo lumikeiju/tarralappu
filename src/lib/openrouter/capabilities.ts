@@ -112,6 +112,12 @@ export function resolveCapabilities(
       imageSizes.length > 0 ||
       quality.length > 0 ||
       background.length > 0,
+    // OpenRouter's discovery marks this true only for OpenAI's GPT image
+    // models today. Whether /chat/completions actually forwards partial
+    // image previews for `stream: true` (vs. only text deltas) is
+    // unconfirmed — see chatCompletionStream() in client.ts — but the flag
+    // itself is accurate: these models do support SSE streaming.
+    supportsStreaming: discovery?.supports_streaming ?? false,
     // Also "estimated" for the chat-completions image-tool models — their
     // aspect_ratio/image_size values are carried over from pre-discovery
     // guesswork, not confirmed by /images/models (see comment above).

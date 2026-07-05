@@ -280,11 +280,14 @@ export async function composeRequest(
   }
   const inputImageCount = countImages(finalMessages);
 
+  const streamRequested =
+    capabilities.supportsStreaming && sketch.streamEnabled;
+
   const body: CompletionRequest = {
     model: sketch.modelId,
     messages: finalMessages,
     modalities: outputModalities,
-    stream: false,
+    stream: streamRequested,
     usage: { include: true }
   };
 
@@ -314,6 +317,7 @@ export async function composeRequest(
     modalities: body.modalities,
     image_config: body.image_config,
     provider: body.provider,
+    stream: streamRequested,
     messages: snapshotMessages
   };
 
@@ -337,7 +341,7 @@ export function elidedRequestJson(snapshot: SketchRequestSnapshot): string {
         }))
       ]
     })),
-    stream: false,
+    stream: snapshot.stream,
     usage: { include: true }
   };
   return JSON.stringify(display, null, 2);
