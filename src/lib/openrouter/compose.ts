@@ -289,10 +289,20 @@ export async function composeRequest(
   };
 
   if (supportsImageConfig) {
-    body.image_config = {
-      aspect_ratio: sketch.aspectRatio,
-      image_size: sketch.imageSize
-    };
+    const imageConfig: NonNullable<CompletionRequest["image_config"]> = {};
+    if (capabilities.aspectRatios.length > 0) {
+      imageConfig.aspect_ratio = sketch.aspectRatio;
+    }
+    if (capabilities.imageSizes.length > 0) {
+      imageConfig.image_size = sketch.imageSize;
+    }
+    if (capabilities.quality.length > 0 && sketch.quality) {
+      imageConfig.quality = sketch.quality;
+    }
+    if (capabilities.background.length > 0 && sketch.background) {
+      imageConfig.background = sketch.background;
+    }
+    body.image_config = imageConfig;
   }
 
   if (sketch.reasoningEffort) {

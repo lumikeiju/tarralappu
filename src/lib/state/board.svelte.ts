@@ -264,6 +264,8 @@ export async function createRootSketch(
     },
     aspectRatio: board?.settings.defaultAspectRatio ?? "1:1",
     imageSize: board?.settings.defaultImageSize ?? "1K",
+    quality: null,
+    background: null,
     reasoningEffort: null,
     status: "draft",
     error: null,
@@ -304,6 +306,8 @@ export async function createRefinementSketch(
     },
     aspectRatio: parent.aspectRatio,
     imageSize: parent.imageSize,
+    quality: parent.quality,
+    background: parent.background,
     reasoningEffort: parent.reasoningEffort,
     status: "draft",
     error: null,
@@ -569,6 +573,8 @@ export async function forkChain(
     "1:1";
   const sourceImageSize =
     source?.imageSize ?? boardState.board?.settings.defaultImageSize ?? "1K";
+  const sourceQuality = source?.quality ?? null;
+  const sourceBackground = source?.background ?? null;
   const sourceReasoningEffort = source?.reasoningEffort ?? null;
 
   // Collect ancestors (order < atSketchOrder) and JSON-roundtrip them to strip
@@ -609,6 +615,8 @@ export async function forkChain(
     attach: { styleDoc: false, styleRef: false, layoutRef: false },
     aspectRatio: sourceAspectRatio,
     imageSize: sourceImageSize,
+    quality: sourceQuality,
+    background: sourceBackground,
     reasoningEffort: sourceReasoningEffort,
     status: "draft",
     error: null,

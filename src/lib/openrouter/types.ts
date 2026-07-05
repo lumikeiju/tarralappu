@@ -82,6 +82,13 @@ export interface ModelCapabilities {
   maxInputImages: number;
   aspectRatios: string[];
   imageSizes: string[];
+  /**
+   * Some models (e.g. OpenAI's GPT image models generated through an LLM)
+   * don't expose aspect_ratio/resolution at all — they use `quality`/
+   * `background` instead. Empty array = unsupported.
+   */
+  quality: string[];
+  background: string[];
   supportsImageConfig: boolean;
   /** true when capabilities were inferred from defaults, not from a curated override */
   estimated: boolean;
@@ -104,7 +111,12 @@ export interface CompletionRequest {
   model: string;
   messages: ChatMessage[];
   modalities: ("image" | "text")[];
-  image_config?: { aspect_ratio?: string; image_size?: string };
+  image_config?: {
+    aspect_ratio?: string;
+    image_size?: string;
+    quality?: string;
+    background?: string;
+  };
   provider?: {
     reasoning_effort?: "low" | "medium" | "high";
   };
