@@ -47,7 +47,12 @@ export interface AttachFlags {
 export interface SketchRequestSnapshot {
   model: string;
   modalities: ("image" | "text")[];
-  image_config?: { aspect_ratio?: string; image_size?: string };
+  image_config?: {
+    aspect_ratio?: string;
+    image_size?: string;
+    quality?: string;
+    background?: string;
+  };
   provider?: { reasoning_effort?: "low" | "medium" | "high" };
   messages: Array<{
     role: "user" | "assistant";
@@ -66,6 +71,9 @@ export interface Sketch {
   attach: AttachFlags;
   aspectRatio: string;
   imageSize: string;
+  /** Only for models without aspect_ratio/resolution support (e.g. GPT image models) */
+  quality: string | null;
+  background: string | null;
   reasoningEffort: "low" | "medium" | "high" | null;
   status: SketchStatus;
   error: string | null;

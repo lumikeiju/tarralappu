@@ -4,6 +4,12 @@
 
 [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.6.2 (2026-07-04)
+
+### Fixes
+
+- OpenAI's GPT image models (`gpt-5-image`, `gpt-5-image-mini`, `gpt-5.4-image-2`) stopped exposing the Aspect/Size controls once model capabilities started coming from OpenRouter's real Image API discovery data. That discovery endpoint describes OpenRouter's separate, stateless *dedicated Image API* surface, not the `/chat/completions`-based conversational image generation this app actually uses — these three models generate images through an LLM tool call (per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/): "GPT 5 and 5.4 versions generate images through an LLM, so they don't provide access to the full set of supported parameters") and never supported aspect_ratio/resolution there in the first place. Restored the Aspect/Size controls for exactly these three models (independent of what discovery reports), and added Quality/Background selects (which discovery *does* confirm for them) so `ResolutionControls` now renders each control independently based on what a model actually supports, rather than assuming every model has all of them. New `Sketch.quality`/`Sketch.background` fields (nullable, additive) carry the choice through generation, refinement, and forking.
+
 ## v1.6.1 (2026-07-03)
 
 ### Fixes

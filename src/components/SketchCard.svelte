@@ -193,14 +193,11 @@
         <ResolutionControls
             aspectRatio={sketch.aspectRatio}
             imageSize={sketch.imageSize}
+            quality={sketch.quality}
+            background={sketch.background}
             reasoningEffort={sketch.reasoningEffort}
             capabilities={caps}
-            onChange={(ar, sz, re) =>
-                void updateSketch(sketch.id, {
-                    aspectRatio: ar,
-                    imageSize: sz,
-                    reasoningEffort: re
-                })}
+            onChange={(updates) => void updateSketch(sketch.id, updates)}
         />
         <button
             class="btn-primary generate-btn"
