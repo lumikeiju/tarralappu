@@ -4,7 +4,7 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
-## Unreleased
+## v1.9.0 (2026-07-10)
 
 ### Features
 
