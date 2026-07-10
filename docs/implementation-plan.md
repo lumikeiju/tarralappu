@@ -130,6 +130,7 @@ type ID = string; // crypto.randomUUID()
 
 interface PromptNote {
     id: ID;
+    name: string;
     text: string; // free-text scratchpad note, not attached to generation
 }
 
@@ -156,7 +157,12 @@ interface Chain {
     boardId: ID;
     order: number; // row order, top to bottom
     modelId: string; // CHAIN-LOCKED model; every sketch in this row uses it (per-card model deferred)
-    forkedFrom: { chainId: ID; sketchOrder: number } | null; // provenance when created via fork
+    forkedFrom: {
+        chainId: ID;
+        sketchId: ID;
+        sketchOrder: number;
+        kind: "reroll" | "refinement";
+    } | null; // provenance when created via fork
     chainCostCapUsd: number | null;
     createdAt: number;
 }
@@ -390,7 +396,7 @@ Every sketch card exposes a **"View source"** control (`</>`) that reveals the *
 ## 7. State architecture (Svelte 5 runes)
 
 - **`settings.svelte.ts`** — reactive singleton: `apiKey` (in memory; mirrored to sessionStorage, or localStorage if "remember" opted in), `rememberKey`, `theme`, `concurrency`, session cost cap. Hydrated from storage on load.
-- **`board.svelte.ts`** — reactive board graph: the board, its chains (rows), sketches, and prompt notes. Exposes derived selectors (`getChainsOrdered`, `sketchesForChain`, `getSessionCostTotal`, `chainCostTotal`) and mutations (`createChain`, `createRootSketch`, `createRefinementSketch`, `updateSketch`, `submitSketch`, `trashSketchesFrom`, `forkChain`, `addPromptNote`/`updatePromptNote`/`removePromptNote`, `sendPromptToModels`).
+- **`board.svelte.ts`** — reactive board graph: the board, its chains (rows), sketches, and prompt notes. Exposes derived selectors (`getChainsOrdered`, `sketchesForChain`, `getSessionCostTotal`, `chainCostTotal`) and mutations (`createChain`, `createRootSketch`, `createRefinementSketch`, `updateSketch`, `submitSketch`, `trashSketchesFrom`, `forkReroll`, `forkRefinementDrafts`, `addPromptNote`/`updatePromptNote`/`removePromptNote`, `sendPromptToModels`).
 - Capability data: `boardState.availableModels: ModelCapabilities[]` plus `capabilitiesFor(modelId)` — each **chain** resolves capabilities from its locked `modelId`.
 
 Persistence is **write-through**: every mutation updates runes state and the matching IndexedDB record (`Object.assign` + `saveX(JSON.parse(JSON.stringify(x)))` to strip Svelte 5 reactive proxies before serialization). On load, hydrate runes from IndexedDB. Image blobs are exposed as object URLs created on mount, revoked on unmount — never held as data URLs in reactive state.
@@ -434,17 +440,18 @@ Per [OpenRouter's errors-and-debugging reference](https://openrouter.ai/docs/api
 - Prompt textarea (draft/error cards only — immutable once `done`).
 - **AttachmentChecks**: attach style description / style ref / layout ref, each disabled if the asset is absent; checking beyond `maxInputImages` is blocked.
 - **ResolutionControls**: aspect-ratio + size selectors, populated only with the model's allowed values.
-- **View source** (`</>`), **Trash** (cascade), **Refresh** (fork), **Retry** (error cards).
+- **View source** (`</>`), **Trash** (cascade), **Re-run prompt**, **Fork refinements**, and **Retry** (error cards).
 - Generate/Refine button, status, result image (with zoom via `Lightbox`), estimated/actual cost.
 
-### Card actions: trash (cascade) & fork (re-roll)
+### Card actions: trash, re-run, and refinement forks
 
 Completed sketches are **immutable**.
 
 - **Trash (cascade).** Removes the card **and all descendants to its right** in the row. A "pending-trash" style previews the blast radius before an explicit confirm click. Cancels any in-flight job first; decrements image refcounts.
-- **Fork (Refresh).** Forks the chain **up to that card** into a **new row**: ancestors are copied reusing the originals' images (refcount++), and the forked position becomes a new editable draft pre-filled with that card's prompt/attachments. The new chain records `forkedFrom` and inherits the source chain's model.
+- **Re-run prompt.** A completed card's refresh icon can fork the chain **up to that card** into one to four **new rows**: completed ancestors are copied reusing the originals' images (refcount++), and the selected position becomes an editable draft pre-filled with that card's prompt and settings (attachments, resolution, quality/background, streaming, and reasoning). The new chains record a `reroll` `forkedFrom` provenance value and inherit the source chain's model.
+- **Fork refinements.** A completed card's branch icon can create one to four sibling rows. Each row copies the completed path through that image, then ends in an editable refinement draft carrying the selected card's prompt and settings. A draft or errored refinement can use the same control to create sibling branches from its completed parent; those branches preserve the in-progress prompt and all settings, allowing several variations to be prepared before any is generated. The shared numeric selector and multiplication sign apply to both fork actions.
 
-**Retry** (error cards) re-enqueues the same request on the same card. **Refresh** (done cards) forks into a new row with an editable draft — distinct controls.
+**Retry** (error cards) re-enqueues the same request on the same card. **Re-run prompt** creates a draft with the selected completed prompt; **Fork refinements** creates editable refinement drafts with the selected prompt and settings — all are distinct controls.
 
 ---
 

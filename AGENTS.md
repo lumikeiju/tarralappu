@@ -24,6 +24,7 @@ GitHub Pages on a project repo silently shadows the apex at the same slug. Decid
 ## Working agreement
 
 - [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): description`) and [Semantic Versioning](https://semver.org/). Keep `CHANGELOG.md` and `package.json` `version` in sync.
+- Every completed set of development changes must update [CHANGELOG.md](CHANGELOG.md) in the same changeset.
 - Branch names: `type/scope/short-description`.
 - Format with Prettier (`bun run format`) before committing.
 - User-facing UI conforms to [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
@@ -40,9 +41,3 @@ GitHub Pages on a project repo silently shadows the apex at the same slug. Decid
 | Contributor flow | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
 The Copilot-specific entry point [`.github/copilot-instructions.md`](.github/copilot-instructions.md) just points back here.
-
-## Editing this template
-
-Keep customization files short and dense. Each fact lives in exactly one file; others link. Prefer bullets over prose. Scope `applyTo` patterns as narrowly as correct.
-
-If you are working in a repo cloned from this template, rewrite `README.md`, `AGENTS.md`, `CHANGELOG.md`, and `package.json` to describe the new project. Don't leave "Peruskivi" language behind.

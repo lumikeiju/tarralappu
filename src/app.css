@@ -77,7 +77,7 @@
   --sp-8: 32px;
 
   /* Focus ring */
-  --focus-ring: 0 0 0 3px rgba(0, 87, 168, 0.45);
+  --focus-ring: 0 0 0 3px #0057a8;
 
   /* Setup bar */
   --setupbar-bg: #e8e0c8;
@@ -132,7 +132,7 @@
     --note-pink-tape: rgba(150, 20, 80, 0.52);
     --board-dot: rgba(255, 255, 255, 0.04);
     --cost-bar-track: #685a3e;
-    --focus-ring: 0 0 0 3px rgba(77, 163, 255, 0.5);
+    --focus-ring: 0 0 0 3px #4da3ff;
     --setupbar-bg: #17150e;
     --setupbar-border: #3a3020;
     color-scheme: dark;
@@ -183,7 +183,7 @@
   --note-pink-tape: rgba(150, 20, 80, 0.52);
   --board-dot: rgba(255, 255, 255, 0.04);
   --cost-bar-track: #685a3e;
-  --focus-ring: 0 0 0 3px rgba(77, 163, 255, 0.5);
+  --focus-ring: 0 0 0 3px #4da3ff;
   --setupbar-bg: #17150e;
   --setupbar-border: #3a3020;
   color-scheme: dark;
@@ -233,7 +233,7 @@
   --note-pink-tape: rgba(190, 24, 93, 0.42);
   --board-dot: rgba(0, 0, 0, 0.07);
   --cost-bar-track: #7a6c50;
-  --focus-ring: 0 0 0 3px rgba(0, 87, 168, 0.45);
+  --focus-ring: 0 0 0 3px #0057a8;
   --setupbar-bg: #e8e0c8;
   --setupbar-border: #c8b98a;
   color-scheme: light;

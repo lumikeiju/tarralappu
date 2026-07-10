@@ -21,12 +21,13 @@
 
     const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-    function onNoteInput(id: string, value: string) {
-        clearTimeout(debounceTimers.get(id));
+    function onNoteInput(id: string, field: "name" | "text", value: string) {
+        const timerKey = `${id}:${field}`;
+        clearTimeout(debounceTimers.get(timerKey));
         debounceTimers.set(
-            id,
+            timerKey,
             setTimeout(() => {
-                void updatePromptNote(id, value);
+                void updatePromptNote(id, { [field]: value });
             }, 400)
         );
     }
@@ -102,6 +103,22 @@
                     ✕
                 </button>
             </div>
+            <label class="sr-only" for="prompt-note-name-{note.id}"
+                >Prompt note name</label
+            >
+            <input
+                class="prompt-note__name"
+                id="prompt-note-name-{note.id}"
+                value={note.name ?? ""}
+                oninput={(e) =>
+                    onNoteInput(
+                        note.id,
+                        "name",
+                        (e.target as HTMLInputElement).value
+                    )}
+                placeholder="Name this prompt…"
+                type="text"
+            />
             <label class="sr-only" for="prompt-note-{note.id}"
                 >Prompt note text</label
             >
@@ -111,6 +128,7 @@
                 oninput={(e) =>
                     onNoteInput(
                         note.id,
+                        "text",
                         (e.target as HTMLTextAreaElement).value
                     )}
                 rows={5}
@@ -148,7 +166,7 @@
     }
     .prompt-note {
         flex-shrink: 0;
-        width: 200px;
+        width: 260px;
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -161,9 +179,15 @@
     .prompt-note__remove {
         color: var(--clr-danger);
     }
+    .prompt-note__name {
+        width: 100%;
+        font-weight: 700;
+        background: transparent;
+        border: 1px solid var(--clr-text-2);
+    }
     .prompt-note textarea {
         width: 100%;
-        min-height: 96px;
+        min-height: 140px;
         font-size: 0.8125rem;
         resize: vertical;
         background: transparent;
@@ -174,8 +198,8 @@
         padding-top: 16px;
     }
     .prompt-note-add {
-        width: 200px;
-        min-height: 140px;
+        width: 260px;
+        min-height: 190px;
         border: 2px dashed var(--clr-border);
         border-radius: var(--card-radius);
         background: transparent;
