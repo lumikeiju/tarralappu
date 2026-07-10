@@ -5,6 +5,7 @@ export type ID = string;
 /** A single free-text scratchpad note on the "Prompt Board" shelf. */
 export interface PromptNote {
   id: ID;
+  name: string;
   text: string;
 }
 
@@ -31,7 +32,12 @@ export interface Chain {
   boardId: ID;
   order: number;
   modelId: string;
-  forkedFrom: { chainId: ID; sketchOrder: number } | null;
+  forkedFrom: {
+    chainId: ID;
+    sketchId: ID;
+    sketchOrder: number;
+    kind: "reroll" | "refinement";
+  } | null;
   chainCostCapUsd: number | null;
   createdAt: number;
 }

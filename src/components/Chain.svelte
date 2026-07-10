@@ -62,7 +62,11 @@
                     ?.name ?? chain.modelId}
             </span>
             {#if chain.forkedFrom}
-                <span class="fork-badge" title="Forked chain">⑂ Fork</span>
+                <span class="fork-badge" title="Forked chain"
+                    >⑂ {chain.forkedFrom.kind === "refinement"
+                        ? "Refinement fork"
+                        : "Re-run fork"}</span
+                >
             {/if}
         </div>
         <div class="chain-cost">

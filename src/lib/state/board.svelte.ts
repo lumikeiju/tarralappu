@@ -24,6 +24,7 @@ import type {
   BoardSettings,
   AttachFlags,
   ID,
+  PromptNote,
   SketchStatus
 } from "../db/schema";
 import { newId } from "../util/id";
@@ -182,16 +183,19 @@ export async function addPromptNote(): Promise<void> {
   const board = boardState.board;
   if (!board) return;
   if (!board.settings.promptNotes) board.settings.promptNotes = [];
-  board.settings.promptNotes.push({ id: newId(), text: "" });
+  board.settings.promptNotes.push({ id: newId(), name: "", text: "" });
   await saveBoard(JSON.parse(JSON.stringify(board)));
 }
 
-export async function updatePromptNote(id: ID, text: string): Promise<void> {
+export async function updatePromptNote(
+  id: ID,
+  updates: Partial<Pick<PromptNote, "name" | "text">>
+): Promise<void> {
   const board = boardState.board;
   if (!board) return;
   const note = board.settings.promptNotes?.find((n) => n.id === id);
   if (!note) return;
-  note.text = text;
+  Object.assign(note, updates);
   await saveBoard(JSON.parse(JSON.stringify(board)));
 }
 
@@ -295,8 +299,15 @@ export async function createRefinementSketch(
 ): Promise<Sketch> {
   const parent = boardState.sketches.find((s) => s.id === parentSketchId);
   if (!parent) throw new Error("Parent sketch not found");
+  if (parent.status !== "done") {
+    throw new Error("Only completed sketches can be refined");
+  }
   const chain = boardState.chains.find((c) => c.id === parent.chainId);
   if (!chain) throw new Error("Chain not found");
+  const chainSketches = sketchesForChain(chain.id);
+  if (chainSketches.at(-1)?.id !== parent.id) {
+    throw new Error("Only the latest sketch in a chain can be refined");
+  }
   const board = boardState.board;
 
   const sketch: Sketch = {
@@ -561,80 +572,93 @@ export async function trashSketchesFrom(
   }
 }
 
-// ── Fork (Refresh) ────────────────────────────────────────────────────────────
+// ── Forks ───────────────────────────────────────────────────────────────────
 
-/** Fork the chain up to and including `atSketchOrder` into a new chain.
- *  Ancestors are copied (sharing the same image IDs, refcounted).
- *  The fork position becomes a new editable draft pre-filled from the original.
- *
- *  State is updated synchronously before any async DB calls so that the new
- *  chain row renders with its full content in a single frame, not as an empty
- *  row that fills in later. */
-export async function forkChain(
-  chainId: ID,
-  atSketchOrder: number
-): Promise<Chain> {
-  const sourceChain = boardState.chains.find((c) => c.id === chainId);
-  if (!sourceChain) throw new Error("Chain not found");
-
-  // Read source values eagerly (before any awaits) so proxy access is clean.
-  const source = boardState.sketches.find(
-    (s) => s.chainId === chainId && s.order === atSketchOrder
+function completedPathThrough(source: Sketch): Sketch[] {
+  const path = sketchesForChain(source.chainId).filter(
+    (sketch) => sketch.order <= source.order
   );
-  const sourcePrompt = source?.prompt ?? "";
-  const sourceAspectRatio =
-    source?.aspectRatio ??
-    boardState.board?.settings.defaultAspectRatio ??
-    "1:1";
-  const sourceImageSize =
-    source?.imageSize ?? boardState.board?.settings.defaultImageSize ?? "1K";
-  const sourceQuality = source?.quality ?? null;
-  const sourceBackground = source?.background ?? null;
-  const sourceStreamEnabled = source?.streamEnabled ?? false;
-  const sourceReasoningEffort = source?.reasoningEffort ?? null;
+  if (path.some((sketch) => sketch.status !== "done")) {
+    throw new Error("Forks require a completed chain path");
+  }
+  return JSON.parse(JSON.stringify(path)) as Sketch[];
+}
 
-  // Collect ancestors (order < atSketchOrder) and JSON-roundtrip them to strip
-  // Svelte 5 reactive proxies before using them as plain data.
-  const ancestorProxies = boardState.sketches
-    .filter((s) => s.chainId === chainId && s.order < atSketchOrder)
-    .sort((a, b) => a.order - b.order);
-  const ancestors: Sketch[] = ancestorProxies.map(
-    (a) => JSON.parse(JSON.stringify(a)) as Sketch
-  );
-
+function newForkChain(source: Sketch, kind: "reroll" | "refinement"): Chain {
+  const sourceChain = boardState.chains.find((c) => c.id === source.chainId);
+  if (!sourceChain) throw new Error("Source chain not found");
   const maxOrder = boardState.chains.reduce((m, c) => Math.max(m, c.order), -1);
-  const newChain: Chain = {
+  return {
     id: newId(),
     boardId: DEFAULT_BOARD_ID,
     order: maxOrder + 1,
     modelId: sourceChain.modelId,
-    forkedFrom: { chainId, sketchOrder: atSketchOrder },
+    forkedFrom: {
+      chainId: source.chainId,
+      sketchId: source.id,
+      sketchOrder: source.order,
+      kind
+    },
     chainCostCapUsd: null,
     createdAt: Date.now()
   };
+}
 
-  // Build plain copy objects (new IDs, new chainId).
-  const copies: Sketch[] = ancestors.map((ancestor) => ({
-    ...ancestor,
-    id: newId(),
-    chainId: newChain.id,
+function copyCompletedPath(path: Sketch[], newChainId: ID): Sketch[] {
+  const copiedIds = new Map<ID, ID>();
+  for (const sketch of path) copiedIds.set(sketch.id, newId());
+  return path.map((sketch) => ({
+    ...sketch,
+    id: copiedIds.get(sketch.id)!,
+    chainId: newChainId,
+    parentSketchId: sketch.parentSketchId
+      ? (copiedIds.get(sketch.parentSketchId) ?? null)
+      : null,
+    // Copied history reuses an existing image; it did not incur a new request
+    // or cost in this fork.
+    costEstimateUsd: null,
+    costActualUsd: null,
     createdAt: Date.now()
   }));
+}
 
-  const draft: Sketch = {
+async function persistFork(
+  chain: Chain,
+  copies: Sketch[],
+  draft: Sketch
+): Promise<void> {
+  boardState.chains.push(chain);
+  boardState.sketches.push(...copies, draft);
+
+  await saveChain(chain);
+  for (const copy of copies) {
+    await incrementRefCount(copy.resultImageIds);
+    await saveSketch(copy);
+  }
+  await saveSketch(draft);
+}
+
+function refinementDraft(
+  parent: Sketch,
+  template: Sketch,
+  chainId: ID,
+  modelId: string,
+  prompt: string
+): Sketch {
+  return {
     id: newId(),
-    chainId: newChain.id,
-    parentSketchId: copies.length > 0 ? copies[copies.length - 1].id : null,
-    order: atSketchOrder,
-    modelId: newChain.modelId,
-    prompt: sourcePrompt,
-    attach: { styleDoc: false, styleRef: false, layoutRef: false },
-    aspectRatio: sourceAspectRatio,
-    imageSize: sourceImageSize,
-    quality: sourceQuality,
-    background: sourceBackground,
-    streamEnabled: sourceStreamEnabled,
-    reasoningEffort: sourceReasoningEffort,
+    chainId,
+    parentSketchId: parent.id,
+    order: parent.order + 1,
+    modelId,
+    prompt,
+    attach: { ...template.attach },
+    aspectRatio: template.aspectRatio,
+    imageSize: template.imageSize,
+    quality: template.quality,
+    background: template.background,
+    streamEnabled: template.streamEnabled,
+    reasoningEffort: template.reasoningEffort,
     status: "draft",
     error: null,
     errorRaw: null,
@@ -644,21 +668,85 @@ export async function forkChain(
     requestSnapshot: null,
     createdAt: Date.now()
   };
+}
 
-  // ── Synchronous state update (all at once, no awaits) ──────────────────────
-  // This ensures the new chain row renders with its full content immediately,
-  // rather than rendering an empty row and filling in later.
-  boardState.chains.push(newChain);
-  for (const copy of copies) boardState.sketches.push(copy);
-  boardState.sketches.push(draft);
-
-  // ── Async persistence (state already reflects the fork) ───────────────────
-  await saveChain(newChain);
-  for (const copy of copies) {
-    await incrementRefCount(copy.resultImageIds);
-    await saveSketch(copy);
+/** Re-run a completed prompt in one to four new rows with editable settings. */
+export async function forkReroll(
+  sourceSketchId: ID,
+  count: 1 | 2 | 3 | 4 = 1
+): Promise<Chain[]> {
+  const source = boardState.sketches.find((s) => s.id === sourceSketchId);
+  if (!source || source.status !== "done") {
+    throw new Error("Only completed sketches can be re-run in a fork");
   }
-  await saveSketch(draft);
+  const path = completedPathThrough(source).slice(0, -1);
+  const forks: Chain[] = [];
+  for (let index = 0; index < count; index++) {
+    const chain = newForkChain(source, "reroll");
+    const copies = copyCompletedPath(path, chain.id);
+    const draft: Sketch = {
+      id: newId(),
+      chainId: chain.id,
+      parentSketchId: copies.at(-1)?.id ?? null,
+      order: source.order,
+      modelId: chain.modelId,
+      prompt: source.prompt,
+      attach: { ...source.attach },
+      aspectRatio: source.aspectRatio,
+      imageSize: source.imageSize,
+      quality: source.quality,
+      background: source.background,
+      streamEnabled: source.streamEnabled,
+      reasoningEffort: source.reasoningEffort,
+      status: "draft",
+      error: null,
+      errorRaw: null,
+      costEstimateUsd: null,
+      costActualUsd: null,
+      resultImageIds: [],
+      requestSnapshot: null,
+      createdAt: Date.now()
+    };
+    await persistFork(chain, copies, draft);
+    forks.push(chain);
+  }
+  return forks;
+}
 
-  return newChain;
+/** Create one to four refinement branches from a completed parent.
+ * A draft/error refinement resolves to its completed parent, enabling siblings
+ * before the first refinement is generated while preserving the draft's
+ * prompt and settings. */
+export async function forkRefinementDrafts(
+  sourceSketchId: ID,
+  count: 1 | 2 | 3 | 4
+): Promise<Chain[]> {
+  const selected = boardState.sketches.find((s) => s.id === sourceSketchId);
+  if (!selected) throw new Error("Source sketch not found");
+  const source =
+    selected.status === "done"
+      ? selected
+      : selected.parentSketchId &&
+          (selected.status === "draft" || selected.status === "error")
+        ? boardState.sketches.find((s) => s.id === selected.parentSketchId)
+        : undefined;
+  if (!source || source.status !== "done") {
+    throw new Error("Fork a completed sketch or one of its draft refinements");
+  }
+
+  const forks: Chain[] = [];
+  for (let index = 0; index < count; index++) {
+    const chain = newForkChain(source, "refinement");
+    const copies = copyCompletedPath(completedPathThrough(source), chain.id);
+    const draft = refinementDraft(
+      copies.at(-1)!,
+      selected,
+      chain.id,
+      chain.modelId,
+      selected.prompt
+    );
+    await persistFork(chain, copies, draft);
+    forks.push(chain);
+  }
+  return forks;
 }

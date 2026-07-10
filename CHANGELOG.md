@@ -2,21 +2,27 @@
 
 # Changelog
 
-[Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
+
+## Unreleased
+
+### Features
+
+- Prompt Board notes can now have editable name labels, making saved prompt snippets easier to identify at a glance. Existing notes remain compatible and can be named as needed.
+- Completed sketches now offer separate re-run and refinement-fork icons. Choose a multiplier from one to four to create that many re-run or refinement branches; refinement forks create sibling rows with the source prompt and settings copied into editable drafts, including immediately from an unfinished refinement, so multiple variations can be prepared from the same completed image.
+- Forked drafts inherit the source card's prompt, attachment checkboxes, aspect ratio, image size, quality, background, streaming, and reasoning settings. This applies to both re-run forks and refinement forks, including branches made from an unfinished refinement.
+- Increased the default Prompt Board card size to provide more room for prompt names and text.
 
 ## v1.8.0 (2026-07-04)
 
 ### Features
 
+- Collapsible "Style & References" / "Prompt Board" section headers now show a hover background, matching the affordance every other interactive control in the app already has.
 - Added a page footer (new `Footer.svelte`, a proper `<footer>` landmark) with a short privacy note ("runs entirely in your browser — prompts, images, and your API key stay on this device") and a link to the GitHub repo, plus the current version number. Added a second, icon-only GitHub link in the header for visibility without scrolling.
 
 ### Fixes
 
 - The loading screen (shown before the board finishes initializing) had no `<main>` landmark at all, temporarily breaking the skip-link's target and the page's landmark structure. `<main id="main-content">` now always exists; the ready/loading branches render inside it instead of replacing it.
-
-### Polish
-
-- Collapsible "Style & References" / "Prompt Board" section headers now show a hover background, matching the affordance every other interactive control in the app already has.
 
 ## v1.7.1 (2026-07-04)
 
