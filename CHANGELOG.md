@@ -4,6 +4,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.9.1 (2026-07-18)
+
+### Fixes
+
+- Upgraded the Svelte/Vite toolchain and TypeScript together so `svelte-check` supports the current TypeScript 6 release without the previous compatibility crash.
+
 ## v1.9.0 (2026-07-10)
 
 ### Features
