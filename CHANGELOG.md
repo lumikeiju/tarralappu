@@ -4,6 +4,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.9.2 (2026-07-18)
+
+### Fixes
+
+- Updated the build check to use TypeScript 7's native preview compiler through `svelte-check`'s supported `--tsgo-experimental-api` integration, while retaining TypeScript 6 only for the currently published Svelte language-tools API bridge. This prevents the TypeScript 7 module-export crash and keeps the production build on the current compiler line.
+
 ## v1.9.1 (2026-07-18)
 
 ### Fixes
