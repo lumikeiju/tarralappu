@@ -4,15 +4,50 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.12.2 (2026-09-13)
+
+### Fixes
+
+- Fixed final accessibility and responsive-layout issues, including unique attachment hint IDs, high-contrast lightbox focus, model-picker error feedback, and narrow-screen pricing overflow.
+
+## v1.12.1 (2026-09-13)
+
+### Fixes
+
+- Fixed vertical alignment in the setup bar's compact controls by normalizing the parallel-control line height and input height.
+
+## v1.12.0 (2026-09-13)
+
+### Features
+
+- Added persistent model pinning to the model picker. Pinned models appear in a `PINNED` section at the top while remaining in their original creator groups.
+
+## v1.11.0 (2026-09-13)
+
+### Features
+
+- Added initial-run forks for root drafts, with a 1–10 multiplier, copying the model and generation settings into independent editable draft chains so prompt variants can be prepared before generating.
+
+## v1.10.0 (2026-07-18)
+
+### Features
+
+- Added OpenRouter's dedicated Image API generation path for models returned by `/api/v1/images/models`, while retaining chat completions for legacy image models.
+- Added model-aware output count, format, compression, and seed controls, plus minimum and maximum reference-image validation.
+- Added support for dedicated Image API streaming, non-PNG media types, and displaying every image returned by multi-output generations.
+- Updated request snapshots, pricing labels, documentation, and release metadata for the unified Image API.
+
 ## v1.9.2 (2026-07-18)
 
 ### Fixes
 
-- Updated the build check to use TypeScript 7's native preview compiler through `svelte-check`'s supported `--tsgo-experimental-api` integration, while retaining TypeScript 6 only for the currently published Svelte language-tools API bridge. This prevents the TypeScript 7 module-export crash and keeps the production build on the current compiler line.
+### Fixes
 
-## v1.9.1 (2026-07-18)
+## v1.10.1 (2026-09-13)
 
 ### Fixes
+
+- Prevented long error URLs, raw API responses, and other card text from overflowing fixed sketch-card bounds.
 
 - Upgraded the Svelte/Vite toolchain and TypeScript together so `svelte-check` supports the current TypeScript 6 release without the previous compatibility crash.
 

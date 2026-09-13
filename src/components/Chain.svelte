@@ -63,9 +63,11 @@
             </span>
             {#if chain.forkedFrom}
                 <span class="fork-badge" title="Forked chain"
-                    >⑂ {chain.forkedFrom.kind === "refinement"
-                        ? "Refinement fork"
-                        : "Re-run fork"}</span
+                    >⑂ {chain.forkedFrom.kind === "initial"
+                        ? "Initial fork"
+                        : chain.forkedFrom.kind === "refinement"
+                          ? "Refinement fork"
+                          : "Re-run fork"}</span
                 >
             {/if}
         </div>
@@ -137,7 +139,7 @@
                     /></svg
                 >
             </div>
-            <div class="ghost-card-wrap">
+            <div class="ghost-card-wrap" role="listitem">
                 <button
                     class="ghost-refine-card"
                     onclick={addRefinement}
@@ -220,8 +222,8 @@
         flex-direction: row;
         gap: 0;
         overflow-x: auto;
-        padding-bottom: 8px;
-        padding-top: 16px; /* room for tape accents */
+        margin-right: -20px;
+        padding: 24px 0 28px;
         align-items: flex-start;
     }
     /* Connector between cards */

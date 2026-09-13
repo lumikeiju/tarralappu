@@ -8,6 +8,10 @@
         background?: string;
         reasoningEffort?: "low" | "medium" | "high" | null;
         streamEnabled?: boolean;
+        outputCount?: number;
+        outputFormat?: string | null;
+        outputCompression?: number | null;
+        seed?: number | null;
     }
 
     const {
@@ -17,6 +21,10 @@
         background,
         reasoningEffort,
         streamEnabled,
+        outputCount,
+        outputFormat,
+        outputCompression,
+        seed,
         capabilities,
         onChange
     }: {
@@ -26,6 +34,10 @@
         background: string | null;
         reasoningEffort: "low" | "medium" | "high" | null;
         streamEnabled: boolean;
+        outputCount: number;
+        outputFormat: string | null;
+        outputCompression: number | null;
+        seed: number | null;
         capabilities: ModelCapabilities | undefined;
         onChange: (updates: ResolutionUpdate) => void;
     } = $props();
@@ -36,9 +48,21 @@
     const imageSizes = $derived(capabilities?.imageSizes ?? []);
     const qualities = $derived(capabilities?.quality ?? []);
     const backgrounds = $derived(capabilities?.background ?? []);
+    const outputFormats = $derived(capabilities?.outputFormats ?? []);
+    const compressionRange = $derived(capabilities?.outputCompression ?? null);
+    const maxOutputs = $derived(capabilities?.maxOutputs ?? 1);
+    const supportsSeed = $derived(capabilities?.supportsSeed ?? false);
     const canStream = $derived(capabilities?.supportsStreaming ?? false);
+    const hasOutputControls = $derived(
+        maxOutputs > 1 ||
+            outputFormats.length > 0 ||
+            compressionRange !== null ||
+            supportsSeed
+    );
     const show = $derived(
-        (capabilities?.supportsImageConfig ?? false) || canStream
+        (capabilities?.supportsImageConfig ?? false) ||
+            canStream ||
+            hasOutputControls
     );
     const isReasoningModel = $derived(
         capabilities?.id === "openai/gpt-5.4-image-2"
@@ -48,6 +72,40 @@
     // "auto" — use it as the displayed default until the user picks explicitly.
     const qualityValue = $derived(quality ?? "auto");
     const backgroundValue = $derived(background ?? "auto");
+    const outputFormatValue = $derived(outputFormat ?? "");
+
+    function setOutputCount(value: string) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return;
+        onChange({
+            outputCount: Math.min(maxOutputs, Math.max(1, Math.trunc(parsed)))
+        });
+    }
+
+    function setCompression(value: string) {
+        if (value.trim() === "") {
+            onChange({ outputCompression: null });
+            return;
+        }
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || !compressionRange) return;
+        onChange({
+            outputCompression: Math.min(
+                compressionRange.max,
+                Math.max(compressionRange.min, Math.trunc(parsed))
+            )
+        });
+    }
+
+    function setSeed(value: string) {
+        if (value.trim() === "") {
+            onChange({ seed: null });
+            return;
+        }
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return;
+        onChange({ seed: Math.max(0, Math.trunc(parsed)) });
+    }
 </script>
 
 {#if show}
@@ -124,6 +182,80 @@
             </label>
         {/if}
 
+        {#if maxOutputs > 1}
+            <label class="res-label">
+                <span>Outputs</span>
+                <input
+                    class="number-input"
+                    type="number"
+                    min="1"
+                    max={maxOutputs}
+                    step="1"
+                    value={outputCount}
+                    onchange={(e) =>
+                        setOutputCount((e.target as HTMLInputElement).value)}
+                />
+                <span class="range-hint">of {maxOutputs}</span>
+            </label>
+        {/if}
+
+        {#if outputFormats.length > 0}
+            <label class="res-label">
+                <span>Format</span>
+                <select
+                    value={outputFormatValue}
+                    onchange={(e) =>
+                        onChange({
+                            outputFormat: (e.target as HTMLSelectElement).value
+                        })}
+                    aria-label="Output format"
+                >
+                    <option value="">Provider default</option>
+                    {#each outputFormats as format (format)}
+                        <option value={format}>{format}</option>
+                    {/each}
+                </select>
+            </label>
+        {/if}
+
+        {#if compressionRange}
+            <label class="res-label">
+                <span>Compression</span>
+                <input
+                    class="number-input"
+                    type="number"
+                    min={compressionRange.min}
+                    max={compressionRange.max}
+                    step="1"
+                    value={outputCompression ?? ""}
+                    placeholder="Auto"
+                    onchange={(e) =>
+                        setCompression((e.target as HTMLInputElement).value)}
+                    aria-label="Output compression"
+                />
+                <span class="range-hint"
+                    >{compressionRange.min}–{compressionRange.max}</span
+                >
+            </label>
+        {/if}
+
+        {#if supportsSeed}
+            <label class="res-label">
+                <span>Seed</span>
+                <input
+                    class="number-input seed-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={seed ?? ""}
+                    placeholder="Random"
+                    onchange={(e) =>
+                        setSeed((e.target as HTMLInputElement).value)}
+                    aria-label="Random seed"
+                />
+            </label>
+        {/if}
+
         {#if isReasoningModel}
             <label class="res-label">
                 <span>Reasoning</span>
@@ -193,6 +325,18 @@
         width: auto;
         font-size: 0.8125rem;
         padding: 2px 6px;
+    }
+    .number-input {
+        width: 64px;
+        font-size: 0.8125rem;
+        padding: 2px 6px;
+    }
+    .seed-input {
+        width: 92px;
+    }
+    .range-hint {
+        color: var(--clr-text-3);
+        font-size: 0.75rem;
     }
     .stream-control {
         display: flex;

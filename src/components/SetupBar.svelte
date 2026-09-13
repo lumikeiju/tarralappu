@@ -15,7 +15,7 @@
 
 <header class="setup-bar">
     <div class="setup-bar__left">
-        <h1 class="app-title">Tarralappu</h1>
+        <span class="app-title">Tarralappu</span>
 
         <div class="key-toggle">
             <button
@@ -122,13 +122,16 @@
         align-items: center;
         gap: 6px;
         font-size: 0.8125rem;
+        line-height: 1;
         color: var(--clr-text-2);
         font-weight: 500;
     }
     .concurrency-input {
         width: 52px;
+        height: 28px;
         padding: 2px 6px;
         font-size: 0.8125rem;
+        line-height: 1;
         text-align: center;
     }
     .repo-link {

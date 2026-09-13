@@ -4,7 +4,8 @@
 
 <footer class="app-footer">
     <p class="app-footer__note">
-        This image generation harness is open-source and runs entirely in-browser!
+        This image generation harness is open-source and runs entirely
+        in-browser!
     </p>
     <div class="app-footer__links">
         <span class="app-footer__version">v{pkg.version}</span>

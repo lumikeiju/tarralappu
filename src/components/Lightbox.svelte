@@ -2,11 +2,15 @@
     const {
         src,
         alt,
+        width,
+        height,
         open,
         onClose
     }: {
         src: string;
         alt: string;
+        width: number;
+        height: number;
         open: boolean;
         onClose: () => void;
     } = $props();
@@ -62,7 +66,7 @@
                 <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
         </button>
-        <img class="lightbox__img" {src} {alt} />
+        <img class="lightbox__img" {src} {alt} {width} {height} />
     </div>
 </dialog>
 
@@ -160,6 +164,6 @@
 
     .lightbox__close:focus-visible {
         outline: 2px solid transparent;
-        box-shadow: var(--focus-ring);
+        box-shadow: var(--focus-ring-overlay);
     }
 </style>

@@ -79,12 +79,18 @@ export function formatModelPricing(
   const completion = parseFloat(pricing.completion ?? "0");
   const image = parseFloat(pricing.image ?? "0");
   const request = parseFloat(pricing.request ?? "0");
+  const imageOutput = parseFloat(pricing.image_output ?? "0");
+  const imageToken = parseFloat(pricing.image_token ?? "0");
 
   const parts: string[] = [];
   if (prompt > 0) parts.push(`${formatUsd(prompt * 1_000_000)}/1M in`);
   if (completion > 0) parts.push(`${formatUsd(completion * 1_000_000)}/1M out`);
   if (image > 0) parts.push(`${formatUsd(image)}/input img`);
   if (request > 0) parts.push(`${formatUsd(request)}/request`);
+  if (imageOutput > 0)
+    parts.push(`${formatUsd(imageOutput * 1_000_000)}/1M image out`);
+  if (imageToken > 0 && imageOutput <= 0)
+    parts.push(`${formatUsd(imageToken * 1_000_000)}/1M image`);
 
   return parts.length > 0 ? parts.join(" \u00b7 ") : null;
 }
@@ -111,6 +117,8 @@ export function pricingTier(
   const completion = parseFloat(pricing.completion ?? "0");
   const image = parseFloat(pricing.image ?? "0");
   const request = parseFloat(pricing.request ?? "0");
+  const imageOutput = parseFloat(pricing.image_output ?? "0");
+  const imageToken = parseFloat(pricing.image_token ?? "0");
 
   if (completion > 0 || prompt > 0) {
     const perMillion = (completion || prompt) * 1_000_000;
@@ -126,6 +134,12 @@ export function pricingTier(
   if (request > 0) {
     if (request < 0.005) return "$";
     if (request < 0.02) return "$$";
+    return "$$$";
+  }
+  const imagePerMillion = (imageOutput || imageToken) * 1_000_000;
+  if (imagePerMillion > 0) {
+    if (imagePerMillion < 3) return "$";
+    if (imagePerMillion < 10) return "$$";
     return "$$$";
   }
   return null;

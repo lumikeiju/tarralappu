@@ -18,6 +18,7 @@ export interface BoardSettings {
   defaultAspectRatio: string;
   defaultImageSize: string;
   promptNotes: PromptNote[];
+  pinnedModelIds: string[];
 }
 
 export interface Board {
@@ -36,7 +37,7 @@ export interface Chain {
     chainId: ID;
     sketchId: ID;
     sketchOrder: number;
-    kind: "reroll" | "refinement";
+    kind: "initial" | "reroll" | "refinement";
   } | null;
   chainCostCapUsd: number | null;
   createdAt: number;
@@ -51,6 +52,7 @@ export interface AttachFlags {
 }
 
 export interface SketchRequestSnapshot {
+  api?: "images" | "chat";
   model: string;
   modalities: ("image" | "text")[];
   image_config?: {
@@ -58,6 +60,20 @@ export interface SketchRequestSnapshot {
     image_size?: string;
     quality?: string;
     background?: string;
+  };
+  image_request?: {
+    model: string;
+    prompt: string;
+    n?: number;
+    resolution?: string;
+    aspect_ratio?: string;
+    quality?: string;
+    output_format?: string;
+    background?: string;
+    output_compression?: number;
+    seed?: number;
+    stream: boolean;
+    imageRefs: ID[];
   };
   provider?: { reasoning_effort?: "low" | "medium" | "high" };
   stream: boolean;
@@ -81,6 +97,10 @@ export interface Sketch {
   /** Only for models without aspect_ratio/resolution support (e.g. GPT image models) */
   quality: string | null;
   background: string | null;
+  outputCount?: number;
+  outputFormat?: string | null;
+  outputCompression?: number | null;
+  seed?: number | null;
   /** Request partial-preview streaming (`stream: true`) — only offered for models with `ModelCapabilities.supportsStreaming`. */
   streamEnabled: boolean;
   reasoningEffort: "low" | "medium" | "high" | null;
@@ -175,7 +195,8 @@ export function defaultBoardSettings(): BoardSettings {
     sessionCostCapUsd: null,
     defaultAspectRatio: "1:1",
     defaultImageSize: "1K",
-    promptNotes: []
+    promptNotes: [],
+    pinnedModelIds: []
   };
 }
 
