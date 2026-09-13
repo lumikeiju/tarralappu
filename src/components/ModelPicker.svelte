@@ -1,5 +1,9 @@
 <script lang="ts">
-    import { boardState, loadAvailableModels } from "../lib/state/board.svelte";
+    import {
+        boardState,
+        loadAvailableModels,
+        togglePinnedModel
+    } from "../lib/state/board.svelte";
     import type { ModelCapabilities } from "../lib/openrouter/types";
     import { formatModelPricing, pricingTier } from "../lib/openrouter/cost";
     import { groupModelsByCreator } from "../lib/openrouter/modelGroups";
@@ -25,6 +29,32 @@
         groupModelsByCreator(boardState.availableModels, filter)
     );
 
+    function matchesFilter(model: ModelCapabilities): boolean {
+        const term = filter.trim().toLowerCase();
+        return (
+            term === "" ||
+            model.name.toLowerCase().includes(term) ||
+            model.id.toLowerCase().includes(term)
+        );
+    }
+
+    const pinnedModels = $derived(
+        boardState.availableModels
+            .filter((model) =>
+                (boardState.board?.settings.pinnedModelIds ?? []).includes(
+                    model.id
+                )
+            )
+            .filter(matchesFilter)
+            .sort((a, b) => a.name.localeCompare(b.name))
+    );
+
+    function isPinned(modelId: string): boolean {
+        return (boardState.board?.settings.pinnedModelIds ?? []).includes(
+            modelId
+        );
+    }
+
     const selectedModel = $derived(
         boardState.availableModels.find((m) => m.id === value)
     );
@@ -34,8 +64,11 @@
     <div class="picker-header">
         <span class="picker-label">Model</span>
         {#if boardState.modelsLoading}
-            <span class="loading-hint">Loading models…</span>
+            <span class="loading-hint" role="status" aria-live="polite"
+                >Loading models…</span
+            >
         {:else if boardState.modelsError}
+            <span class="load-error" role="alert">Could not load models.</span>
             <button class="btn-ghost retry" onclick={loadAvailableModels}
                 >Retry</button
             >
@@ -51,6 +84,57 @@
     />
 
     <div class="model-groups">
+        {#if pinnedModels.length > 0}
+            <fieldset class="creator-group pinned-group">
+                <legend>PINNED</legend>
+                {#each pinnedModels as m (m.id)}
+                    {@const tier = pricingTier(m.pricing, m.id)}
+                    <div class="model-option">
+                        <label class="model-choice">
+                            <input
+                                type="radio"
+                                name={groupName}
+                                value={m.id}
+                                checked={value === m.id}
+                                disabled={boardState.modelsLoading}
+                                onchange={() => onSelect(m.id)}
+                            />
+                            <span class="model-name" title={m.id}
+                                >{label(m)}</span
+                            >
+                            {#if tier}
+                                <span
+                                    class="price-tier"
+                                    data-tier={tier}
+                                    title="Relative cost tier: {tier}"
+                                >
+                                    {tier}
+                                </span>
+                            {/if}
+                            <span class="model-price"
+                                >{formatModelPricing(m.pricing, m.id) ??
+                                    "pricing not listed"}</span
+                            >
+                        </label>
+                        <button
+                            type="button"
+                            class="pin-btn"
+                            class:pinned={isPinned(m.id)}
+                            aria-pressed={isPinned(m.id)}
+                            aria-label="Unpin {m.name}"
+                            title="Unpin model"
+                            disabled={boardState.modelsLoading}
+                            onclick={() => void togglePinnedModel(m.id)}
+                        >
+                            <span aria-hidden="true">★</span>
+                        </button>
+                    </div>
+                {/each}
+            </fieldset>
+            {#if groups.length > 0}
+                <hr class="group-sep" />
+            {/if}
+        {/if}
         {#each groups as group, i (group.key)}
             {#if i > 0}
                 <hr class="group-sep" />
@@ -59,38 +143,62 @@
                 <legend>{group.label}</legend>
                 {#each group.models as m (m.id)}
                     {@const tier = pricingTier(m.pricing, m.id)}
-                    <label class="model-option">
-                        <input
-                            type="radio"
-                            name={groupName}
-                            value={m.id}
-                            checked={value === m.id}
-                            disabled={boardState.modelsLoading}
-                            onchange={() => onSelect(m.id)}
-                        />
-                        <span class="model-name" title={m.id}>{label(m)}</span>
-                        {#if tier}
-                            <span
-                                class="price-tier"
-                                data-tier={tier}
-                                title="Relative cost tier: {tier}"
+                    <div class="model-option">
+                        <label class="model-choice">
+                            <input
+                                type="radio"
+                                name={groupName}
+                                value={m.id}
+                                checked={value === m.id}
+                                disabled={boardState.modelsLoading}
+                                onchange={() => onSelect(m.id)}
+                            />
+                            <span class="model-name" title={m.id}
+                                >{label(m)}</span
                             >
-                                {tier}
-                            </span>
-                        {/if}
-                        <span class="model-price"
-                            >{formatModelPricing(m.pricing, m.id) ??
-                                "pricing not listed"}</span
+                            {#if tier}
+                                <span
+                                    class="price-tier"
+                                    data-tier={tier}
+                                    title="Relative cost tier: {tier}"
+                                >
+                                    {tier}
+                                </span>
+                            {/if}
+                            <span class="model-price"
+                                >{formatModelPricing(m.pricing, m.id) ??
+                                    "pricing not listed"}</span
+                            >
+                        </label>
+                        <button
+                            type="button"
+                            class="pin-btn"
+                            class:pinned={isPinned(m.id)}
+                            aria-pressed={isPinned(m.id)}
+                            aria-label="{isPinned(m.id)
+                                ? 'Unpin'
+                                : 'Pin'} {m.name}"
+                            title={isPinned(m.id) ? "Unpin model" : "Pin model"}
+                            disabled={boardState.modelsLoading}
+                            onclick={() => void togglePinnedModel(m.id)}
                         >
-                    </label>
+                            <span aria-hidden="true"
+                                >{isPinned(m.id) ? "★" : "☆"}</span
+                            >
+                        </button>
+                    </div>
                 {/each}
             </fieldset>
         {/each}
         {#if groups.length === 0}
             <p class="no-results">
-                {boardState.modelsLoading
-                    ? "Loading models…"
-                    : `No models match "${filter}".`}
+                {#if boardState.modelsError}
+                    Could not load models. Try again.
+                {:else if boardState.modelsLoading}
+                    Loading models…
+                {:else}
+                    No models match "{filter}".
+                {/if}
             </p>
         {/if}
     </div>
@@ -132,11 +240,16 @@
         font-size: 0.75rem;
         color: var(--clr-text-3);
     }
+    .load-error {
+        font-size: 0.75rem;
+        color: var(--clr-danger);
+    }
 
     .model-groups {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
         max-height: 320px;
         overflow-y: auto;
         border: 1px solid var(--clr-border);
@@ -154,6 +267,7 @@
         border: none;
         padding: 0;
         margin: 0;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 2px;
@@ -172,6 +286,8 @@
         display: flex;
         align-items: baseline;
         gap: 8px;
+        min-width: 0;
+        width: 100%;
         font-size: 0.8125rem;
         color: var(--clr-text);
         cursor: pointer;
@@ -187,6 +303,37 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+    .model-choice {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        cursor: pointer;
+        color: inherit;
+    }
+    .pin-btn {
+        flex: 0 0 auto;
+        min-width: 24px;
+        min-height: 24px;
+        padding: 2px 4px;
+        border: none;
+        background: transparent;
+        color: var(--clr-text-3);
+        font-size: 1rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .pin-btn:hover:not(:disabled),
+    .pin-btn.pinned {
+        color: var(--clr-accent);
+    }
+    .pin-btn:focus-visible {
+        outline: 2px solid transparent;
+        box-shadow: var(--focus-ring);
     }
     .price-tier {
         display: inline-flex;
@@ -211,10 +358,13 @@
         color: var(--clr-danger);
     }
     .model-price {
+        min-width: 0;
+        max-width: 48%;
         font-size: 0.6875rem;
         color: var(--clr-text-3);
         font-variant-numeric: tabular-nums;
-        white-space: nowrap;
+        text-align: right;
+        overflow-wrap: anywhere;
     }
     .no-results {
         font-size: 0.8125rem;

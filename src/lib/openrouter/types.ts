@@ -1,12 +1,15 @@
 // OpenRouter API types
 
 export interface ModelPricing {
-  prompt: string;
-  completion: string;
-  image: string;
-  request: string;
+  prompt?: string;
+  completion?: string;
+  image?: string;
+  request?: string;
+  image_output?: string;
+  image_token?: string;
   input_cache_read?: string;
   input_cache_write?: string;
+  [key: string]: string | undefined;
 }
 
 export interface RawModel {
@@ -20,6 +23,7 @@ export interface RawModel {
   };
   pricing: ModelPricing;
   context_length?: number;
+  supported_parameters?: string[];
 }
 
 export interface ModelListResponse {
@@ -77,9 +81,12 @@ export interface ImageModelDiscoveryResponse {
 export interface ModelCapabilities {
   id: string;
   name: string;
+  generationApi: "images" | "chat";
   outputModalities: ("image" | "text")[];
   conversational: boolean;
+  minInputImages: number;
   maxInputImages: number;
+  maxOutputs: number;
   aspectRatios: string[];
   imageSizes: string[];
   /**
@@ -89,6 +96,9 @@ export interface ModelCapabilities {
    */
   quality: string[];
   background: string[];
+  outputFormats: string[];
+  outputCompression: { min: number; max: number } | null;
+  supportsSeed: boolean;
   supportsImageConfig: boolean;
   /** From discovery's `supports_streaming` — lets the request set `stream: true`. */
   supportsStreaming: boolean;
@@ -124,6 +134,37 @@ export interface CompletionRequest {
   };
   stream: boolean;
   usage: { include: true };
+}
+
+export interface ImageInputReference {
+  type: "image_url";
+  image_url: { url: string };
+}
+
+export interface ImageGenerationRequest {
+  model: string;
+  prompt: string;
+  n?: number;
+  resolution?: string;
+  aspect_ratio?: string;
+  quality?: string;
+  output_format?: string;
+  background?: string;
+  output_compression?: number;
+  seed?: number;
+  input_references?: ImageInputReference[];
+  stream: boolean;
+}
+
+export interface ImageGenerationResponseData {
+  b64_json: string;
+  media_type?: string;
+}
+
+export interface ImageGenerationResponse {
+  created?: number;
+  data: ImageGenerationResponseData[];
+  usage?: CompletionUsage;
 }
 
 export interface CompletionImageItem {

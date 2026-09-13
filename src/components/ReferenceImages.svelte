@@ -116,9 +116,12 @@
                         onchange={uploadStyle}
                         class="sr-only"
                     />
-                    <span class="upload-btn btn-ghost"
-                        >Upload style ref (PNG / JPEG / WebP)</span
-                    >
+                    <span class="upload-btn btn-ghost">
+                        <span class="upload-btn__title">Upload style ref</span>
+                        <span class="upload-btn__formats"
+                            >PNG / JPEG / WebP</span
+                        >
+                    </span>
                 </label>
                 {#if styleError}
                     <p class="ref-error" role="alert">{styleError}</p>
@@ -153,9 +156,12 @@
                         onchange={uploadLayout}
                         class="sr-only"
                     />
-                    <span class="upload-btn btn-ghost"
-                        >Upload layout ref (PNG / JPEG / WebP)</span
-                    >
+                    <span class="upload-btn btn-ghost">
+                        <span class="upload-btn__title">Upload layout ref</span>
+                        <span class="upload-btn__formats"
+                            >PNG / JPEG / WebP</span
+                        >
+                    </span>
                 </label>
                 {#if layoutError}
                     <p class="ref-error" role="alert">{layoutError}</p>
@@ -213,25 +219,61 @@
         position: absolute;
         top: 4px;
         right: 4px;
-        background: rgba(0, 0, 0, 0.5);
-        color: #fff;
+        background: var(--clr-text);
+        color: var(--clr-surface);
         border-radius: 50%;
-        width: 22px;
-        height: 22px;
+        width: 32px;
+        height: 32px;
         font-size: 0.75rem;
         display: flex;
         align-items: center;
         justify-content: center;
     }
+    .remove-btn:hover:not(:disabled) {
+        background: var(--clr-accent);
+        color: var(--clr-accent-fg);
+    }
     .upload-label {
         display: block;
         cursor: pointer;
     }
+    .upload-label:focus-within .upload-btn {
+        outline: 2px solid transparent;
+        box-shadow: var(--focus-ring);
+    }
     .upload-btn {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
         text-align: center;
         font-size: 0.75rem;
         padding: 6px 8px;
+        border: 1px solid var(--clr-border);
+        background: var(--clr-surface-2);
+        color: var(--clr-text);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        transition:
+            background 0.1s,
+            border-color 0.1s,
+            color 0.1s,
+            box-shadow 0.1s;
+    }
+    .upload-label:hover .upload-btn {
+        background: var(--clr-accent);
+        border-color: var(--clr-accent);
+        color: var(--clr-accent-fg);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+    }
+    .upload-btn__title {
+        font-weight: 600;
+    }
+    .upload-btn__formats {
+        font-size: 0.6875rem;
+        color: var(--clr-text-3);
+    }
+    .upload-label:hover .upload-btn__formats {
+        color: var(--clr-accent-fg);
     }
     .ref-error {
         font-size: 0.75rem;

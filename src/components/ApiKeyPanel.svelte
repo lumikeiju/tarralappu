@@ -88,8 +88,9 @@
             {/if}
 
             <p id="key-hint" class="hint">
-                Your key is sent directly to OpenRouter — never to any server we
-                control.
+                Your key is only ever sent directly to OpenRouter! This tool
+                runs locally in your browser and there is no backend server or
+                tracking capability.
             </p>
         </form>
     {/if}

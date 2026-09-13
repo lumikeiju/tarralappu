@@ -67,11 +67,14 @@ export function resolveCapabilities(
   const outputModalities = (model.architecture?.output_modalities ?? []).filter(
     (m): m is "image" | "text" => m === "image" || m === "text"
   );
+  const generationApi = discovery ? "images" : "chat";
   // The discovery API doesn't have its own "conversational" concept — this
-  // app's meaning (does the model support a multi-turn chat thread with
-  // images) maps directly to whether it emits text output alongside images.
-  const conversational = outputModalities.includes("text");
+  // app's meaning is tied to the selected generation endpoint. The dedicated
+  // Image API is stateless, even when the catalog model also emits text.
+  const conversational =
+    generationApi === "chat" && outputModalities.includes("text");
   const isChatCompletionsImageToolModel =
+    generationApi === "chat" &&
     CHAT_COMPLETIONS_IMAGE_TOOL_MODELS.has(model.id);
 
   const params = discovery?.supported_parameters;
@@ -95,18 +98,37 @@ export function resolveCapabilities(
   // still has *some* image-shape control for these models.
   const quality = enumValues(params?.quality) ?? [];
   const background = enumValues(params?.background) ?? [];
-  const maxInputImages = rangeMax(params?.input_references) ?? 1;
+  const inputReferences = params?.input_references;
+  const minInputImages =
+    inputReferences?.type === "range" ? inputReferences.min : 0;
+  const maxInputImages = rangeMax(inputReferences) ?? (discovery ? 0 : 1);
+  const maxOutputs = rangeMax(params?.n) ?? 1;
+  const outputCompression =
+    params?.output_compression?.type === "range"
+      ? {
+          min: params.output_compression.min,
+          max: params.output_compression.max
+        }
+      : null;
+  const outputFormats = enumValues(params?.output_format) ?? [];
+  const supportsSeed = params?.seed?.type === "boolean";
 
   return {
     id: model.id,
     name: model.name,
+    generationApi,
     outputModalities,
     conversational,
+    minInputImages,
     maxInputImages,
+    maxOutputs,
     aspectRatios,
     imageSizes,
     quality,
     background,
+    outputFormats,
+    outputCompression,
+    supportsSeed,
     supportsImageConfig:
       aspectRatios.length > 0 ||
       imageSizes.length > 0 ||
@@ -118,10 +140,7 @@ export function resolveCapabilities(
     // unconfirmed — see chatCompletionStream() in client.ts — but the flag
     // itself is accurate: these models do support SSE streaming.
     supportsStreaming: discovery?.supports_streaming ?? false,
-    // Also "estimated" for the chat-completions image-tool models — their
-    // aspect_ratio/image_size values are carried over from pre-discovery
-    // guesswork, not confirmed by /images/models (see comment above).
-    estimated: discovery === undefined || isChatCompletionsImageToolModel,
+    estimated: discovery === undefined,
     pricing: model.pricing
   };
 }

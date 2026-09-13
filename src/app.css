@@ -78,6 +78,7 @@
 
   /* Focus ring */
   --focus-ring: 0 0 0 3px #0057a8;
+  --focus-ring-overlay: 0 0 0 3px #ffffff;
 
   /* Setup bar */
   --setupbar-bg: #e8e0c8;

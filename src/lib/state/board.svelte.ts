@@ -37,10 +37,13 @@ import type { ModelCapabilities } from "../openrouter/types";
 import {
   chatCompletion,
   chatCompletionStream,
+  imageGeneration,
+  imageGenerationStream,
   humanizeError,
   rawErrorDetails,
   fetchGenerationCost
 } from "../openrouter/client";
+import type { ImageGenerationRequest } from "../openrouter/types";
 import { composeRequest } from "../openrouter/compose";
 import { estimateCost, parseCostFromResponse } from "../openrouter/cost";
 import { Queue } from "../queue/queue";
@@ -208,6 +211,16 @@ export async function removePromptNote(id: ID): Promise<void> {
   await saveBoard(JSON.parse(JSON.stringify(board)));
 }
 
+export async function togglePinnedModel(modelId: string): Promise<void> {
+  const board = boardState.board;
+  if (!board) return;
+  const pinnedModelIds = board.settings.pinnedModelIds ?? [];
+  board.settings.pinnedModelIds = pinnedModelIds.includes(modelId)
+    ? pinnedModelIds.filter((id) => id !== modelId)
+    : [...pinnedModelIds, modelId];
+  await saveBoard(JSON.parse(JSON.stringify(board)));
+}
+
 /**
  * "Send to" a Prompt Board note: create one new chain + draft root sketch
  * per chosen model, all pre-filled with the same prompt text. Each sketch
@@ -277,6 +290,10 @@ export async function createRootSketch(
     imageSize: board?.settings.defaultImageSize ?? "1K",
     quality: null,
     background: null,
+    outputCount: 1,
+    outputFormat: null,
+    outputCompression: null,
+    seed: null,
     streamEnabled: false,
     reasoningEffort: null,
     status: "draft",
@@ -327,6 +344,10 @@ export async function createRefinementSketch(
     imageSize: parent.imageSize,
     quality: parent.quality,
     background: parent.background,
+    outputCount: parent.outputCount ?? 1,
+    outputFormat: parent.outputFormat ?? null,
+    outputCompression: parent.outputCompression ?? null,
+    seed: parent.seed ?? null,
     streamEnabled: parent.streamEnabled,
     reasoningEffort: parent.reasoningEffort,
     status: "draft",
@@ -406,7 +427,7 @@ async function runGeneration(
   }
 
   // Cost cap pre-flight
-  const estimate = estimateCost(capabilities);
+  const estimate = estimateCost(capabilities, sketch.outputCount ?? 1);
   if (estimate !== null) {
     const sessionCap = board.settings.sessionCostCapUsd;
     if (sessionCap !== null && getSessionCostTotal() + estimate > sessionCap) {
@@ -449,6 +470,14 @@ async function runGeneration(
     });
 
     // Block if over cap after composition (e.g. unexpected i2i refs)
+    if (composed.inputImageCount < capabilities.minInputImages) {
+      await updateSketch(sketchId, {
+        status: "error",
+        error: `This model requires at least ${capabilities.minInputImages} reference image${capabilities.minInputImages === 1 ? "" : "s"}. Attach more images before generating.`,
+        errorRaw: null
+      });
+      return;
+    }
     if (composed.inputImageCount > capabilities.maxInputImages) {
       await updateSketch(sketchId, {
         status: "error",
@@ -458,15 +487,41 @@ async function runGeneration(
       return;
     }
 
-    const response = composed.body.stream
-      ? await chatCompletionStream(composed.body, apiKey, controller.signal, {
-          onImages: (images) => {
-            streamingPreviews[sketchId] = images.map(
-              (img) => img.image_url.url
+    const onImages = (images: { image_url: { url: string } }[]) => {
+      streamingPreviews[sketchId] = images.map((img) => img.image_url.url);
+    };
+    const response =
+      composed.generationApi === "images"
+        ? composed.body.stream
+          ? await imageGenerationStream(
+              composed.body as ImageGenerationRequest,
+              apiKey,
+              controller.signal,
+              { onImages }
+            )
+          : await imageGeneration(
+              composed.body as ImageGenerationRequest,
+              apiKey,
+              controller.signal
+            )
+        : composed.body.stream
+          ? await chatCompletionStream(
+              composed.body as Exclude<
+                typeof composed.body,
+                ImageGenerationRequest
+              >,
+              apiKey,
+              controller.signal,
+              { onImages }
+            )
+          : await chatCompletion(
+              composed.body as Exclude<
+                typeof composed.body,
+                ImageGenerationRequest
+              >,
+              apiKey,
+              controller.signal
             );
-          }
-        })
-      : await chatCompletion(composed.body, apiKey, controller.signal);
 
     if (!response.choices?.[0]?.message?.images?.length) {
       await updateSketch(sketchId, {
@@ -488,7 +543,7 @@ async function runGeneration(
 
     // Parse cost
     let actualCost = parseCostFromResponse(response);
-    if (actualCost === null) {
+    if (actualCost === null && response.id) {
       actualCost = await fetchGenerationCost(response.id, apiKey);
     }
 
@@ -574,6 +629,8 @@ export async function trashSketchesFrom(
 
 // ── Forks ───────────────────────────────────────────────────────────────────
 
+export type ForkCount = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
 function completedPathThrough(source: Sketch): Sketch[] {
   const path = sketchesForChain(source.chainId).filter(
     (sketch) => sketch.order <= source.order
@@ -584,7 +641,10 @@ function completedPathThrough(source: Sketch): Sketch[] {
   return JSON.parse(JSON.stringify(path)) as Sketch[];
 }
 
-function newForkChain(source: Sketch, kind: "reroll" | "refinement"): Chain {
+function newForkChain(
+  source: Sketch,
+  kind: "initial" | "reroll" | "refinement"
+): Chain {
   const sourceChain = boardState.chains.find((c) => c.id === source.chainId);
   if (!sourceChain) throw new Error("Source chain not found");
   const maxOrder = boardState.chains.reduce((m, c) => Math.max(m, c.order), -1);
@@ -602,6 +662,64 @@ function newForkChain(source: Sketch, kind: "reroll" | "refinement"): Chain {
     chainCostCapUsd: null,
     createdAt: Date.now()
   };
+}
+
+function initialForkDraft(
+  source: Sketch,
+  chainId: ID,
+  modelId: string
+): Sketch {
+  return {
+    id: newId(),
+    chainId,
+    parentSketchId: null,
+    order: 0,
+    modelId,
+    prompt: source.prompt,
+    attach: { ...source.attach },
+    aspectRatio: source.aspectRatio,
+    imageSize: source.imageSize,
+    quality: source.quality,
+    background: source.background,
+    outputCount: source.outputCount ?? 1,
+    outputFormat: source.outputFormat ?? null,
+    outputCompression: source.outputCompression ?? null,
+    seed: source.seed ?? null,
+    streamEnabled: source.streamEnabled,
+    reasoningEffort: source.reasoningEffort,
+    status: "draft",
+    error: null,
+    errorRaw: null,
+    costEstimateUsd: null,
+    costActualUsd: null,
+    resultImageIds: [],
+    requestSnapshot: null,
+    createdAt: Date.now()
+  };
+}
+
+/** Create one to ten independent initial-run drafts with copied settings. */
+export async function forkInitialDrafts(
+  sourceSketchId: ID,
+  count: ForkCount
+): Promise<Chain[]> {
+  const source = boardState.sketches.find((s) => s.id === sourceSketchId);
+  if (
+    !source ||
+    (source.status !== "draft" && source.status !== "error") ||
+    source.parentSketchId !== null
+  ) {
+    throw new Error("Only a root draft can create initial forks");
+  }
+
+  const forks: Chain[] = [];
+  for (let index = 0; index < count; index++) {
+    const chain = newForkChain(source, "initial");
+    const draft = initialForkDraft(source, chain.id, chain.modelId);
+    await persistFork(chain, [], draft);
+    forks.push(chain);
+  }
+  return forks;
 }
 
 function copyCompletedPath(path: Sketch[], newChainId: ID): Sketch[] {
@@ -657,6 +775,10 @@ function refinementDraft(
     imageSize: template.imageSize,
     quality: template.quality,
     background: template.background,
+    outputCount: template.outputCount ?? 1,
+    outputFormat: template.outputFormat ?? null,
+    outputCompression: template.outputCompression ?? null,
+    seed: template.seed ?? null,
     streamEnabled: template.streamEnabled,
     reasoningEffort: template.reasoningEffort,
     status: "draft",
@@ -670,10 +792,10 @@ function refinementDraft(
   };
 }
 
-/** Re-run a completed prompt in one to four new rows with editable settings. */
+/** Re-run a completed prompt in one to ten new rows with editable settings. */
 export async function forkReroll(
   sourceSketchId: ID,
-  count: 1 | 2 | 3 | 4 = 1
+  count: ForkCount = 1
 ): Promise<Chain[]> {
   const source = boardState.sketches.find((s) => s.id === sourceSketchId);
   if (!source || source.status !== "done") {
@@ -696,6 +818,10 @@ export async function forkReroll(
       imageSize: source.imageSize,
       quality: source.quality,
       background: source.background,
+      outputCount: source.outputCount ?? 1,
+      outputFormat: source.outputFormat ?? null,
+      outputCompression: source.outputCompression ?? null,
+      seed: source.seed ?? null,
       streamEnabled: source.streamEnabled,
       reasoningEffort: source.reasoningEffort,
       status: "draft",
@@ -719,7 +845,7 @@ export async function forkReroll(
  * prompt and settings. */
 export async function forkRefinementDrafts(
   sourceSketchId: ID,
-  count: 1 | 2 | 3 | 4
+  count: ForkCount
 ): Promise<Chain[]> {
   const selected = boardState.sketches.find((s) => s.id === sourceSketchId);
   if (!selected) throw new Error("Source sketch not found");

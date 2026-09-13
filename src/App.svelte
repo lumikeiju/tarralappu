@@ -40,6 +40,7 @@
 <SetupBar />
 
 <main id="main-content">
+    <h1 class="sr-only">Tarralappu</h1>
     {#if ready}
         <!-- Global authoring panel -->
         <details

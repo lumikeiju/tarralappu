@@ -40,6 +40,12 @@
     const caps = $derived(capabilitiesFor(chain.modelId));
     const isRoot = $derived(sketch.parentSketchId === null);
     const isRefinement = $derived(!isRoot);
+    const parentImageCount = $derived(
+        isRefinement
+            ? (boardState.sketches.find((s) => s.id === sketch.parentSketchId)
+                  ?.resultImageIds.length ?? 1)
+            : 0
+    );
     const isNonConversational = $derived(caps ? !caps.conversational : false);
 
     const hasStyleDoc = $derived(!!boardState.board?.settings.styleDoc?.trim());
@@ -49,9 +55,11 @@
     );
 
     // Image display
-    let imageUrl = $state<string | null>(null);
+    let imageUrls = $state<string[]>([]);
+    let lightboxIndex = $state(0);
     let lightboxOpen = $state(false);
     let showErrorRaw = $state(false);
+    let copyStatus = $state("");
 
     $effect(() => {
         if (sketch.status !== "error") showErrorRaw = false;
@@ -59,26 +67,61 @@
 
     async function copyErrorRaw() {
         if (!sketch.errorRaw) return;
-        await navigator.clipboard.writeText(sketch.errorRaw);
+        try {
+            await navigator.clipboard.writeText(sketch.errorRaw);
+            copyStatus = "Raw response copied.";
+        } catch {
+            copyStatus = "Could not copy the raw response.";
+        }
     }
 
-    $effect(() => {
-        const firstId = sketch.resultImageIds[0];
-        if (!firstId) {
-            if (imageUrl) {
-                revokeObjectUrl(imageUrl);
-                imageUrl = null;
-            }
-            return;
+    function imageDimensions(aspectRatio: string): {
+        width: number;
+        height: number;
+    } {
+        const [width, height] = aspectRatio.split(":").map(Number);
+        if (
+            !Number.isFinite(width) ||
+            !Number.isFinite(height) ||
+            height <= 0
+        ) {
+            return { width: 1024, height: 1024 };
         }
-        getStoredImage(firstId).then((img) => {
-            if (imageUrl) revokeObjectUrl(imageUrl);
-            imageUrl = img ? createObjectUrl(img.blob) : null;
+        return { width: 1024, height: Math.round((1024 * height) / width) };
+    }
+
+    const intrinsicSize = $derived(
+        imageDimensions(sketch.aspectRatio || "1:1")
+    );
+
+    $effect(() => {
+        const imageIds = [...sketch.resultImageIds];
+        let cancelled = false;
+        void Promise.all(
+            imageIds.map(async (id) => {
+                const img = await getStoredImage(id);
+                return img ? createObjectUrl(img.blob) : null;
+            })
+        ).then((next) => {
+            const nextUrls = next.filter((url): url is string => url !== null);
+            if (cancelled) {
+                nextUrls.forEach(revokeObjectUrl);
+                return;
+            }
+            imageUrls.forEach(revokeObjectUrl);
+            imageUrls = nextUrls;
+            lightboxIndex = Math.min(
+                lightboxIndex,
+                Math.max(0, nextUrls.length - 1)
+            );
         });
+        return () => {
+            cancelled = true;
+        };
     });
 
     onDestroy(() => {
-        if (imageUrl) revokeObjectUrl(imageUrl);
+        imageUrls.forEach(revokeObjectUrl);
     });
 
     // Pending trash state
@@ -136,7 +179,12 @@
     style="--note-rotation: {rotation}deg"
 >
     <!-- Status / order header -->
-    <div class="card-header" aria-live="polite" aria-atomic="true">
+    <div
+        class="card-header"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    >
         <span class="order-badge" aria-hidden="true">#{sketch.order + 1}</span>
         {#if sketch.status === "queued"}
             <span class="status-badge status-queued">
@@ -188,6 +236,7 @@
             {hasStyleRef}
             {hasLayoutRef}
             {isRefinement}
+            {parentImageCount}
             onChange={(flags) =>
                 void updateSketch(sketch.id, { attach: flags })}
         />
@@ -198,6 +247,10 @@
             background={sketch.background}
             reasoningEffort={sketch.reasoningEffort}
             streamEnabled={sketch.streamEnabled}
+            outputCount={sketch.outputCount ?? 1}
+            outputFormat={sketch.outputFormat ?? null}
+            outputCompression={sketch.outputCompression ?? null}
+            seed={sketch.seed ?? null}
             capabilities={caps}
             onChange={(updates) => void updateSketch(sketch.id, updates)}
         />
@@ -226,6 +279,8 @@
                 <img
                     src={streamingPreviews[sketch.id].at(-1)}
                     alt=""
+                    width={intrinsicSize.width}
+                    height={intrinsicSize.height}
                     class="stream-preview-img"
                 />
             {/if}
@@ -241,48 +296,62 @@
     {/if}
 
     <!-- Result image -->
-    {#if imageUrl}
-        <div class="result-image">
-            <img
-                src={imageUrl}
-                alt={sketch.prompt.slice(0, 120) || "Generated image"}
-                class="result-img"
-            />
-            <button
-                class="zoom-btn"
-                onclick={() => (lightboxOpen = true)}
-                aria-label="View image full size"
-                title="Zoom"
-            >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    width="14"
-                    height="14"
-                    aria-hidden="true"
-                >
-                    <circle cx="11" cy="11" r="7" />
-                    <line x1="16.5" y1="16.5" x2="22" y2="22" />
-                </svg>
-            </button>
-            <!-- Cost receipt chip overlaid -->
-            {#if sketch.costActualUsd !== null}
-                <span
-                    class="cost-chip"
-                    aria-label="Cost: {formatUsd(sketch.costActualUsd)}"
-                >
-                    {formatUsd(sketch.costActualUsd)}
-                </span>
-            {/if}
+    {#if imageUrls.length > 0}
+        <div class="result-gallery" aria-label="Generated images">
+            {#each imageUrls as url, index (url)}
+                <div class="result-image">
+                    <img
+                        src={url}
+                        alt={imageUrls.length > 1
+                            ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${index + 1} of ${imageUrls.length})`
+                            : sketch.prompt.slice(0, 120) || "Generated image"}
+                        width={intrinsicSize.width}
+                        height={intrinsicSize.height}
+                        class="result-img"
+                    />
+                    <button
+                        class="zoom-btn"
+                        onclick={() => {
+                            lightboxIndex = index;
+                            lightboxOpen = true;
+                        }}
+                        aria-label="View generated image {index + 1} full size"
+                        title="View full size"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            width="14"
+                            height="14"
+                            aria-hidden="true"
+                        >
+                            <circle cx="11" cy="11" r="7" />
+                            <line x1="16.5" y1="16.5" x2="22" y2="22" />
+                        </svg>
+                    </button>
+                    {#if index === 0 && sketch.costActualUsd !== null}
+                        <span
+                            class="cost-chip"
+                            aria-label="Cost: {formatUsd(sketch.costActualUsd)}"
+                        >
+                            {formatUsd(sketch.costActualUsd)}
+                        </span>
+                    {/if}
+                </div>
+            {/each}
         </div>
         <Lightbox
-            src={imageUrl}
-            alt={sketch.prompt.slice(0, 120) || "Generated image"}
+            src={imageUrls[lightboxIndex]}
+            alt={imageUrls.length > 1
+                ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${lightboxIndex + 1} of ${imageUrls.length})`
+                : sketch.prompt.slice(0, 120) || "Generated image"}
+            width={intrinsicSize.width}
+            height={intrinsicSize.height}
             open={lightboxOpen}
             onClose={() => (lightboxOpen = false)}
         />
@@ -314,6 +383,9 @@
                     </div>
                     <pre class="source-pre"><code>{sketch.errorRaw}</code></pre>
                 </div>
+                <p class="sr-only" role="status" aria-live="polite">
+                    {copyStatus}
+                </p>
             {/if}
         {/if}
     {/if}
@@ -338,10 +410,15 @@
 <style>
     .sketch-card {
         width: 280px;
+        min-width: 0;
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
         gap: 8px;
+    }
+    .sketch-card > * {
+        min-width: 0;
+        max-width: 100%;
     }
     .pending-trash {
         background: var(--clr-pending-trash) !important;
@@ -471,6 +548,11 @@
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
         margin: 2px 0;
     }
+    .result-gallery {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
     .result-img {
         width: 100%;
         height: auto;
@@ -523,6 +605,8 @@
         margin-top: 4px;
     }
     .error-msg {
+        min-width: 0;
+        max-width: 100%;
         font-size: 0.8125rem;
         color: var(--clr-danger);
         background: var(--clr-danger-bg);
@@ -530,6 +614,8 @@
         border-radius: 4px;
         padding: 6px 8px;
         margin: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .raw-toggle-btn {
         align-self: flex-start;
@@ -537,6 +623,8 @@
         padding: 2px 6px;
     }
     .source-panel {
+        min-width: 0;
+        max-width: 100%;
         background: var(--clr-surface-2);
         border: 1px solid var(--clr-border);
         border-radius: 4px;
@@ -554,21 +642,27 @@
     }
     .source-header span {
         flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
     .copy-btn {
         font-size: 0.75rem;
         padding: 1px 6px;
     }
     .source-pre {
+        min-width: 0;
+        max-width: 100%;
         margin: 0;
         padding: 10px 12px;
         font-family: var(--font-mono);
         font-size: 0.75rem;
         color: var(--clr-text);
-        overflow-x: auto;
+        overflow-x: hidden;
         max-height: 320px;
         overflow-y: auto;
-        white-space: pre;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .cost-estimate {
         font-size: 0.75rem;

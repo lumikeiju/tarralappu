@@ -1,6 +1,7 @@
 import type {
   ModelCapabilities,
   CompletionRequest,
+  ImageGenerationRequest,
   ContentPart,
   ChatMessage
 } from "./types";
@@ -22,7 +23,8 @@ export interface ComposeInput {
 }
 
 export interface ComposeResult {
-  body: CompletionRequest;
+  body: CompletionRequest | ImageGenerationRequest;
+  generationApi: "images" | "chat";
   snapshot: SketchRequestSnapshot;
   inputImageCount: number;
 }
@@ -162,11 +164,146 @@ function truncateHistoryToFitCap(
   return result;
 }
 
+function buildImageApiLabels(
+  parentImageCount: number,
+  attach: Sketch["attach"],
+  boardSettings: BoardSettings
+): string {
+  const lines: string[] = [];
+  let index = 0;
+  for (let i = 0; i < parentImageCount; i++) {
+    index++;
+    lines.push(
+      `The ${ordinal(index)} attached image is a PREVIOUS GENERATED OUTPUT — use it as the image to edit.`
+    );
+  }
+  if (attach.styleRef && boardSettings.styleRefImageId) {
+    index++;
+    lines.push(
+      `The ${ordinal(index)} attached image is a STYLE REFERENCE — match its palette, texture, lighting, and mood; do not copy its subject.`
+    );
+  }
+  if (attach.layoutRef && boardSettings.layoutRefImageId) {
+    index++;
+    lines.push(
+      `The ${ordinal(index)} attached image is a LAYOUT REFERENCE — match its composition and element placement; ignore its colours and content.`
+    );
+  }
+  return lines.join("\n");
+}
+
+async function composeImageApiRequest(
+  input: ComposeInput
+): Promise<ComposeResult> {
+  const { sketch, chainSketches, boardSettings, capabilities, getImageBase64 } =
+    input;
+  const parent = sketch.parentSketchId
+    ? chainSketches.find((s) => s.id === sketch.parentSketchId)
+    : undefined;
+  const parentImageIds = parent?.resultImageIds ?? [];
+  const built = await buildUserMessage({
+    prompt: sketch.prompt,
+    attach: sketch.attach,
+    boardSettings,
+    conversational: false,
+    isRefinement: parent !== undefined,
+    getImageBase64
+  });
+  const promptParts = [
+    parentImageIds.length > 0
+      ? "[PREVIOUS OUTPUTS]\nUse the attached previous output images as the starting point for this edit."
+      : "",
+    buildImageApiLabels(parentImageIds.length, sketch.attach, boardSettings),
+    built.text
+  ].filter(Boolean);
+  const prompt = promptParts.join("\n\n");
+  const imageRefs = [...parentImageIds, ...built.imageRefs];
+
+  const body: ImageGenerationRequest = {
+    model: sketch.modelId,
+    prompt,
+    stream: capabilities.supportsStreaming && sketch.streamEnabled
+  };
+  const outputCount = Math.max(
+    1,
+    Math.min(sketch.outputCount ?? 1, capabilities.maxOutputs)
+  );
+  if (capabilities.maxOutputs > 1 && outputCount > 1) body.n = outputCount;
+  if (capabilities.aspectRatios.length > 0) {
+    body.aspect_ratio = sketch.aspectRatio;
+  }
+  if (capabilities.imageSizes.length > 0) {
+    body.resolution = sketch.imageSize;
+  }
+  if (capabilities.quality.length > 0 && sketch.quality) {
+    body.quality = sketch.quality;
+  }
+  if (capabilities.outputFormats.length > 0 && sketch.outputFormat) {
+    body.output_format = sketch.outputFormat;
+  }
+  if (capabilities.background.length > 0 && sketch.background) {
+    body.background = sketch.background;
+  }
+  if (capabilities.outputCompression && sketch.outputCompression !== null) {
+    body.output_compression = sketch.outputCompression;
+  }
+  if (capabilities.supportsSeed && sketch.seed !== null) {
+    body.seed = sketch.seed;
+  }
+  if (imageRefs.length > 0) {
+    const inputReferences = [];
+    for (const id of imageRefs) {
+      inputReferences.push({
+        type: "image_url" as const,
+        image_url: { url: await getImageBase64(id) }
+      });
+    }
+    body.input_references = inputReferences;
+  }
+
+  const snapshotMessages: SketchRequestSnapshot["messages"] = [
+    { role: "user", text: prompt, imageRefs }
+  ];
+  const snapshotRequest: NonNullable<SketchRequestSnapshot["image_request"]> = {
+    model: body.model,
+    prompt: body.prompt,
+    ...(body.n !== undefined ? { n: body.n } : {}),
+    ...(body.resolution ? { resolution: body.resolution } : {}),
+    ...(body.aspect_ratio ? { aspect_ratio: body.aspect_ratio } : {}),
+    ...(body.quality ? { quality: body.quality } : {}),
+    ...(body.output_format ? { output_format: body.output_format } : {}),
+    ...(body.background ? { background: body.background } : {}),
+    ...(body.output_compression !== undefined
+      ? { output_compression: body.output_compression }
+      : {}),
+    ...(body.seed !== undefined ? { seed: body.seed } : {}),
+    stream: body.stream,
+    imageRefs
+  };
+
+  return {
+    body,
+    generationApi: "images",
+    snapshot: {
+      api: "images",
+      model: sketch.modelId,
+      modalities: ["image"],
+      image_request: snapshotRequest,
+      stream: body.stream,
+      messages: snapshotMessages
+    },
+    inputImageCount: imageRefs.length
+  };
+}
+
 export async function composeRequest(
   input: ComposeInput
 ): Promise<ComposeResult> {
   const { sketch, chainSketches, boardSettings, capabilities, getImageBase64 } =
     input;
+  if (capabilities.generationApi === "images") {
+    return composeImageApiRequest(input);
+  }
   const {
     conversational,
     maxInputImages,
@@ -313,6 +450,7 @@ export async function composeRequest(
   }
 
   const snapshot: SketchRequestSnapshot = {
+    api: "chat",
     model: sketch.modelId,
     modalities: body.modalities,
     image_config: body.image_config,
@@ -321,11 +459,46 @@ export async function composeRequest(
     messages: snapshotMessages
   };
 
-  return { body, snapshot, inputImageCount };
+  return { body, generationApi: "chat", snapshot, inputImageCount };
 }
 
 /** Produce elided JSON for the view-source panel (no base64, no key). */
 export function elidedRequestJson(snapshot: SketchRequestSnapshot): string {
+  if (snapshot.api === "images" && snapshot.image_request) {
+    const request = snapshot.image_request;
+    return JSON.stringify(
+      {
+        model: request.model,
+        prompt: request.prompt,
+        ...(request.n !== undefined ? { n: request.n } : {}),
+        ...(request.resolution ? { resolution: request.resolution } : {}),
+        ...(request.aspect_ratio ? { aspect_ratio: request.aspect_ratio } : {}),
+        ...(request.quality ? { quality: request.quality } : {}),
+        ...(request.output_format
+          ? { output_format: request.output_format }
+          : {}),
+        ...(request.background ? { background: request.background } : {}),
+        ...(request.output_compression !== undefined
+          ? { output_compression: request.output_compression }
+          : {}),
+        ...(request.seed !== undefined ? { seed: request.seed } : {}),
+        ...(request.imageRefs.length > 0
+          ? {
+              input_references: request.imageRefs.map((id) => ({
+                type: "image_url",
+                image_url: {
+                  url: `data:image/*;base64,\u2026<imageId=${id}>`
+                }
+              }))
+            }
+          : {}),
+        stream: request.stream
+      },
+      null,
+      2
+    );
+  }
+
   const display = {
     model: snapshot.model,
     modalities: snapshot.modalities,

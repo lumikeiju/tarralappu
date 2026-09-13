@@ -6,6 +6,9 @@ import type {
   CompletionUsage,
   ModelListResponse,
   ImageModelDiscoveryResponse,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
+  ImageGenerationResponseData,
   OpenRouterErrorBody,
   OpenRouterErrorDetail,
   OpenRouterErrorMetadata
@@ -293,6 +296,194 @@ export async function chatCompletionStream(
     throw apiErrorFromChoiceError(midStreamError, response);
   }
 
+  return response;
+}
+
+function imageDataUrl(base64: string, mediaType = "image/png"): string {
+  if (base64.startsWith("data:")) return base64;
+  return `data:${mediaType};base64,${base64}`;
+}
+
+function normalizedImageResponse(
+  json: ImageGenerationResponse,
+  generationId: string
+): CompletionResponse {
+  return {
+    id: generationId,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: null,
+          images: (json.data ?? []).map((item) => ({
+            type: "image_url" as const,
+            image_url: {
+              url: imageDataUrl(item.b64_json, item.media_type)
+            }
+          }))
+        },
+        finish_reason: "stop"
+      }
+    ],
+    usage: json.usage
+  };
+}
+
+function imageRequestHeaders(apiKey: string): HeadersInit {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "HTTP-Referer": SITE_URL,
+    "X-Title": SITE_NAME
+  };
+}
+
+/** Generate through OpenRouter's normalized, model-aware Image API. */
+export async function imageGeneration(
+  body: ImageGenerationRequest,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<CompletionResponse> {
+  const res = await fetch(`${BASE}/images`, {
+    method: "POST",
+    signal,
+    headers: imageRequestHeaders(apiKey),
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) throw await apiErrorFromResponse(res);
+
+  const json = (await res.json()) as ImageGenerationResponse & {
+    error?: OpenRouterErrorDetail;
+  };
+  if (json.error) throw apiErrorFromChoiceError(json.error, json);
+
+  return normalizedImageResponse(
+    json,
+    res.headers.get("X-Generation-Id") ?? ""
+  );
+}
+
+/** Stream normalized Image API partials and return the completed response. */
+export async function imageGenerationStream(
+  body: ImageGenerationRequest,
+  apiKey: string,
+  signal: AbortSignal | undefined,
+  callbacks: StreamCallbacks = {}
+): Promise<CompletionResponse> {
+  const res = await fetch(`${BASE}/images`, {
+    method: "POST",
+    signal,
+    headers: imageRequestHeaders(apiKey),
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) throw await apiErrorFromResponse(res);
+  if (!res.body) throw new Error("Streaming response has no body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const images: CompletionImageItem[] = [];
+  let usage: CompletionUsage | undefined;
+  let streamError: OpenRouterErrorDetail | null = null;
+  let generationId = res.headers.get("X-Generation-Id") ?? "";
+
+  function handleEvent(data: string): void {
+    if (!data || data === "[DONE]") return;
+
+    let event: {
+      type?: string;
+      id?: string;
+      b64_json?: string;
+      media_type?: string;
+      partial_image_index?: number;
+      usage?: CompletionUsage;
+      data?: ImageGenerationResponseData[];
+      error?: OpenRouterErrorDetail;
+    };
+    try {
+      event = JSON.parse(data) as typeof event;
+    } catch {
+      return;
+    }
+
+    if (event.id) generationId = event.id;
+    if (event.usage) usage = event.usage;
+    if (event.error) {
+      streamError = event.error;
+      return;
+    }
+
+    const isImageEvent =
+      event.type === "image_generation.partial_image" ||
+      event.type === "image_generation.completed";
+    if (isImageEvent && event.b64_json) {
+      const image: CompletionImageItem = {
+        type: "image_url",
+        image_url: {
+          url: imageDataUrl(event.b64_json, event.media_type)
+        }
+      };
+      const index = event.partial_image_index;
+      if (
+        event.type === "image_generation.partial_image" &&
+        index !== undefined
+      ) {
+        images[index] = image;
+      } else {
+        images[index ?? 0] = image;
+      }
+      callbacks.onImages?.([...images]);
+    }
+
+    if (event.data?.length) {
+      const finalImages = event.data.map((item) => ({
+        type: "image_url" as const,
+        image_url: {
+          url: imageDataUrl(item.b64_json, item.media_type)
+        }
+      }));
+      images.splice(0, images.length, ...finalImages);
+      callbacks.onImages?.([...images]);
+    }
+  }
+
+  function handleLine(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":")) return;
+    if (trimmed.startsWith("data: ")) handleEvent(trimmed.slice(6));
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let lineEnd: number;
+      while ((lineEnd = buffer.indexOf("\n")) !== -1) {
+        handleLine(buffer.slice(0, lineEnd));
+        buffer = buffer.slice(lineEnd + 1);
+      }
+    }
+    if (buffer) handleLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  const response: CompletionResponse = {
+    id: generationId,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: null, images },
+        finish_reason: "stop"
+      }
+    ],
+    usage
+  };
+  if (streamError) throw apiErrorFromChoiceError(streamError, response);
   return response;
 }
 

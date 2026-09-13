@@ -3,6 +3,8 @@
     import { elidedRequestJson } from "../lib/openrouter/compose";
     import {
         retrySketch,
+        type ForkCount,
+        forkInitialDrafts,
         forkReroll,
         forkRefinementDrafts
     } from "../lib/state/board.svelte";
@@ -24,6 +26,7 @@
     } = $props();
 
     let showSource = $state(false);
+    let copyStatus = $state("");
 
     const sourceJson = $derived(
         sketch.requestSnapshot
@@ -33,10 +36,15 @@
 
     async function copySource() {
         if (!sourceJson) return;
-        await navigator.clipboard.writeText(sourceJson);
+        try {
+            await navigator.clipboard.writeText(sourceJson);
+            copyStatus = "Request source copied.";
+        } catch {
+            copyStatus = "Could not copy the request source.";
+        }
     }
 
-    let forkCount = $state<"1" | "2" | "3" | "4">("1");
+    let forkCount = $state<`${ForkCount}`>("1");
     let forksCreating = $state(false);
     let forkStatus = $state("");
     let forkError = $state("");
@@ -46,13 +54,17 @@
             ((sketch.status === "draft" || sketch.status === "error") &&
                 sketch.parentSketchId !== null)
     );
+    const canForkInitialRuns = $derived(
+        (sketch.status === "draft" || sketch.status === "error") &&
+            sketch.parentSketchId === null
+    );
 
     async function handleReroll() {
         forksCreating = true;
         forkStatus = "Creating re-run forks…";
         forkError = "";
         try {
-            await forkReroll(sketch.id, Number(forkCount) as 1 | 2 | 3 | 4);
+            await forkReroll(sketch.id, Number(forkCount) as ForkCount);
             forkStatus = `Created ${forkCount} re-run ${forkCount === "1" ? "fork" : "forks"}.`;
         } catch (error) {
             forkError =
@@ -71,7 +83,7 @@
         try {
             await forkRefinementDrafts(
                 sketch.id,
-                Number(forkCount) as 1 | 2 | 3 | 4
+                Number(forkCount) as ForkCount
             );
             forkStatus = `Created ${forkCount} refinement ${forkCount === "1" ? "fork" : "forks"}.`;
         } catch (error) {
@@ -80,6 +92,24 @@
                 error instanceof Error
                     ? error.message
                     : "Could not create refinement forks.";
+        } finally {
+            forksCreating = false;
+        }
+    }
+
+    async function handleInitialForks() {
+        forksCreating = true;
+        forkStatus = "Creating initial-run forks…";
+        forkError = "";
+        try {
+            await forkInitialDrafts(sketch.id, Number(forkCount) as ForkCount);
+            forkStatus = `Created ${forkCount} initial-run ${forkCount === "1" ? "fork" : "forks"}.`;
+        } catch (error) {
+            forkStatus = "";
+            forkError =
+                error instanceof Error
+                    ? error.message
+                    : "Could not create initial-run forks.";
         } finally {
             forksCreating = false;
         }
@@ -111,11 +141,12 @@
         </button>
     {/if}
 
-    <!-- A completed parent, or an unfinished refinement of one, can branch. -->
-    {#if canForkRefinements}
+    <!-- Draft roots and completed/refinement cards can branch. -->
+    {#if canForkInitialRuns || canForkRefinements}
         <span class="fork-controls">
             <label class="sr-only" for="fork-count-{sketch.id}"
-                >Number of refinement forks</label
+                >Number of {canForkInitialRuns ? "initial-run" : "refinement"}
+                forks</label
             >
             <select
                 class="fork-count"
@@ -127,9 +158,37 @@
                 <option value="2">2</option>
                 <option value="3">3</option>
                 <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
             </select>
             <span aria-hidden="true">×</span>
-            {#if sketch.status === "done"}
+            {#if canForkInitialRuns}
+                <button
+                    class="btn-icon action-btn"
+                    onclick={handleInitialForks}
+                    disabled={forksCreating}
+                    aria-label="Create {forkCount} initial-run {forkCount ===
+                    '1'
+                        ? 'fork'
+                        : 'forks'}"
+                    title="Create {forkCount} initial-run {forkCount === '1'
+                        ? 'fork'
+                        : 'forks'} with copied model and settings"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="5" cy="5" r="2" />
+                        <circle cx="5" cy="19" r="2" />
+                        <circle cx="19" cy="12" r="2" />
+                        <path d="M7 5h3a4 4 0 0 1 4 4v1" />
+                        <path d="M7 19h3a4 4 0 0 0 4-4v-1" />
+                        <path d="M14 12h3" />
+                    </svg>
+                </button>
+            {:else if sketch.status === "done"}
                 <button
                     class="btn-icon action-btn"
                     onclick={handleReroll}
@@ -149,24 +208,26 @@
                     </svg>
                 </button>
             {/if}
-            <button
-                class="btn-icon action-btn"
-                onclick={handleRefinementForks}
-                disabled={forksCreating}
-                aria-label="Create {forkCount} refinement {forkCount === '1'
-                    ? 'fork'
-                    : 'forks'}"
-                title="Create {forkCount} new rows with copied refinement prompts and settings"
-            >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="5" cy="5" r="2" />
-                    <circle cx="5" cy="19" r="2" />
-                    <circle cx="19" cy="12" r="2" />
-                    <path d="M7 5h3a4 4 0 0 1 4 4v1" />
-                    <path d="M7 19h3a4 4 0 0 0 4-4v-1" />
-                    <path d="M14 12h3" />
-                </svg>
-            </button>
+            {#if canForkRefinements}
+                <button
+                    class="btn-icon action-btn"
+                    onclick={handleRefinementForks}
+                    disabled={forksCreating}
+                    aria-label="Create {forkCount} refinement {forkCount === '1'
+                        ? 'fork'
+                        : 'forks'}"
+                    title="Create {forkCount} new rows with copied refinement prompts and settings"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="5" cy="5" r="2" />
+                        <circle cx="5" cy="19" r="2" />
+                        <circle cx="19" cy="12" r="2" />
+                        <path d="M7 5h3a4 4 0 0 1 4 4v1" />
+                        <path d="M7 19h3a4 4 0 0 0 4-4v-1" />
+                        <path d="M14 12h3" />
+                    </svg>
+                </button>
+            {/if}
         </span>
     {/if}
 
@@ -196,6 +257,7 @@
 {#if forkError}
     <p class="fork-error" role="alert">{forkError}</p>
 {/if}
+<p class="sr-only" role="status" aria-live="polite">{copyStatus}</p>
 
 {#if showSource && sourceJson}
     <div class="source-panel" role="region" aria-label="Request source">
