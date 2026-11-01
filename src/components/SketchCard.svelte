@@ -5,8 +5,7 @@
         streamingPreviews,
         updateSketch,
         submitSketch,
-        capabilitiesFor,
-        trashSketchesFrom
+        capabilitiesFor
     } from "../lib/state/board.svelte";
     import {
         getStoredImage,
@@ -14,6 +13,7 @@
         revokeObjectUrl
     } from "../lib/db/images";
     import { formatUsd } from "../lib/openrouter/cost";
+    import { effectiveOption } from "../lib/openrouter/capabilities";
     import AttachmentChecks from "./AttachmentChecks.svelte";
     import ResolutionControls from "./ResolutionControls.svelte";
     import CardActions from "./CardActions.svelte";
@@ -25,6 +25,7 @@
         sketch,
         chain,
         pendingTrashFrom,
+        pendingTrashCount,
         onTrashClick,
         onTrashConfirm,
         onTrashCancel
@@ -32,6 +33,7 @@
         sketch: Sketch;
         chain: Chain;
         pendingTrashFrom: number | null;
+        pendingTrashCount: number;
         onTrashClick: (order: number) => void;
         onTrashConfirm: () => void;
         onTrashCancel: () => void;
@@ -90,9 +92,14 @@
         return { width: 1024, height: Math.round((1024 * height) / width) };
     }
 
-    const intrinsicSize = $derived(
-        imageDimensions(sketch.aspectRatio || "1:1")
+    // The ratio actually sent: stored values the model doesn't support fall back
+    // to its first allowed option in composeRequest.
+    const displayAspectRatio = $derived(
+        (caps
+            ? effectiveOption(sketch.aspectRatio, caps.aspectRatios)
+            : sketch.aspectRatio) || "1:1"
     );
+    const intrinsicSize = $derived(imageDimensions(displayAspectRatio));
 
     $effect(() => {
         const imageIds = [...sketch.resultImageIds];
@@ -179,29 +186,37 @@
     style="--note-rotation: {rotation}deg"
 >
     <!-- Status / order header -->
-    <div
-        class="card-header"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-    >
-        <span class="order-badge" aria-hidden="true">#{sketch.order + 1}</span>
-        {#if sketch.status === "queued"}
-            <span class="status-badge status-queued">
-                <span class="status-dot" aria-hidden="true"></span>Queued
-            </span>
-        {:else if sketch.status === "generating"}
-            <span class="status-badge status-generating">
-                <span class="spinner" aria-hidden="true"></span>Generating…
-            </span>
-        {:else if sketch.status === "done"}
-            <span class="status-badge status-done">
-                <span class="status-dot" aria-hidden="true"></span>Done
-            </span>
-        {:else if sketch.status === "error"}
-            <span class="status-badge status-error">
-                <span class="status-dot" aria-hidden="true"></span>Error
-            </span>
+    <div class="card-header">
+        <div
+            class="card-status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+        >
+            <span class="order-badge" aria-hidden="true"
+                >#{sketch.order + 1}</span
+            >
+            {#if sketch.status === "queued"}
+                <span class="status-badge status-queued">
+                    <span class="status-dot" aria-hidden="true"></span>Queued
+                </span>
+            {:else if sketch.status === "generating"}
+                <span class="status-badge status-generating">
+                    <span class="spinner" aria-hidden="true"></span>Generating…
+                </span>
+            {:else if sketch.status === "done"}
+                <span class="status-badge status-done">
+                    <span class="status-dot" aria-hidden="true"></span>Done
+                </span>
+            {:else if sketch.status === "error"}
+                <span class="status-badge status-error">
+                    <span class="status-dot" aria-hidden="true"></span>Error
+                </span>
+            {/if}
+        </div>
+        {#if isPendingTrash}
+            <span class="status-badge pending-trash-badge">Will be deleted</span
+            >
         {/if}
     </div>
 
@@ -272,7 +287,7 @@
         </p>
         <div
             class="image-skeleton skeleton"
-            style="aspect-ratio: {arCss(sketch.aspectRatio || '1:1')}"
+            style="aspect-ratio: {arCss(displayAspectRatio)}"
             aria-hidden="true"
         >
             {#if streamingPreviews[sketch.id]?.length}
@@ -381,7 +396,10 @@
                             onclick={copyErrorRaw}>Copy</button
                         >
                     </div>
-                    <pre class="source-pre"><code>{sketch.errorRaw}</code></pre>
+                    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                    <pre class="source-pre" tabindex="0"><code
+                            >{sketch.errorRaw}</code
+                        ></pre>
                 </div>
                 <p class="sr-only" role="status" aria-live="polite">
                     {copyStatus}
@@ -392,7 +410,10 @@
 
     <!-- In-flight cost estimate (no image yet) -->
     {#if sketch.costEstimateUsd !== null && sketch.status !== "done" && sketch.costActualUsd === null}
-        <p class="cost-estimate" title="Estimate — may differ from actual">
+        <p
+            class="cost-estimate"
+            title="Lower-bound estimate — actual cost may be higher"
+        >
             ~{formatUsd(sketch.costEstimateUsd)} est.
         </p>
     {/if}
@@ -401,6 +422,7 @@
         {sketch}
         {chain}
         pendingTrash={isPendingTrash}
+        {pendingTrashCount}
         onTrashClick={() => onTrashClick(sketch.order)}
         {onTrashConfirm}
         {onTrashCancel}
@@ -423,11 +445,17 @@
     .pending-trash {
         background: var(--clr-pending-trash) !important;
         border-color: var(--clr-pending-trash-border) !important;
-        opacity: 0.7;
+    }
+    .pending-trash-badge {
+        margin-left: auto;
+        padding: 1px 7px;
+        border: 1px solid var(--clr-danger);
+        color: var(--clr-danger);
     }
 
     /* Header */
-    .card-header {
+    .card-header,
+    .card-status {
         display: flex;
         align-items: center;
         gap: 6px;
@@ -564,7 +592,7 @@
         bottom: 6px;
         right: 6px;
         background: rgba(0, 0, 0, 0.55);
-        color: #fff;
+        color: var(--clr-on-overlay);
         font-size: 0.6875rem;
         font-weight: 600;
         font-variant-numeric: tabular-nums;
@@ -585,7 +613,7 @@
         align-items: center;
         justify-content: center;
         background: rgba(0, 0, 0, 0.55);
-        color: #fff;
+        color: var(--clr-on-overlay);
         border: 1px solid transparent;
         border-radius: 50%;
         backdrop-filter: blur(4px);

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import {
         auth,
         settings,
@@ -11,21 +12,27 @@
     let showKey = $state(false);
     let remember = $state(false);
     let editing = $state(!auth.apiKey);
+    let keyInput = $state<HTMLInputElement>();
+    let changeKeyButton = $state<HTMLButtonElement>();
 
-    function submit(e: SubmitEvent) {
+    async function submit(e: SubmitEvent) {
         e.preventDefault();
         const trimmed = inputKey.trim();
         if (!trimmed) return;
         setApiKey(trimmed, remember);
         inputKey = "";
         editing = false;
+        await tick();
+        changeKeyButton?.focus();
     }
 
-    function disconnect() {
+    async function disconnect() {
         clearApiKey();
         inputKey = "";
         remember = false;
         editing = true;
+        await tick();
+        keyInput?.focus();
     }
 
     $effect(() => {
@@ -37,7 +44,11 @@
     {#if auth.apiKey && !editing}
         <div class="connected">
             <span class="connected__badge" aria-label="API key set">Key ✓</span>
-            <button class="btn-ghost" onclick={disconnect}>Change key</button>
+            <button
+                class="btn-ghost"
+                bind:this={changeKeyButton}
+                onclick={disconnect}>Change key</button
+            >
         </div>
     {:else}
         <form onsubmit={submit} class="key-form">
@@ -48,6 +59,7 @@
                 <div class="key-input-wrap">
                     <input
                         id="api-key-input"
+                        bind:this={keyInput}
                         type={showKey ? "text" : "password"}
                         bind:value={inputKey}
                         placeholder="sk-or-v1-…"
@@ -59,8 +71,8 @@
                         type="button"
                         class="btn-icon show-toggle"
                         onclick={() => (showKey = !showKey)}
-                        aria-label={showKey ? "Hide key" : "Show key"}
-                        >{showKey ? "🙈" : "👁"}</button
+                        aria-label="Show key"
+                        aria-pressed={showKey}>{showKey ? "🙈" : "👁"}</button
                     >
                 </div>
                 <button

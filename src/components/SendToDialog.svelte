@@ -88,7 +88,13 @@
                 </button>
             </div>
 
-            <p class="send-to-preview">
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <p
+                class="send-to-preview"
+                role="region"
+                aria-label="Prompt preview"
+                tabindex="0"
+            >
                 “{promptPreview}”
             </p>
 

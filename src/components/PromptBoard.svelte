@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import {
         boardState,
         addPromptNote,
@@ -20,6 +21,19 @@
     }
 
     const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    let addNoteButton = $state<HTMLButtonElement>();
+
+    async function removeNote(id: string) {
+        const index = notes.findIndex((note) => note.id === id);
+        await removePromptNote(id);
+        await tick();
+        const nextNote = notes[index] ?? notes[index - 1];
+        if (nextNote) {
+            document.getElementById(`prompt-note-${nextNote.id}`)?.focus();
+        } else {
+            addNoteButton?.focus();
+        }
+    }
 
     function onNoteInput(id: string, field: "name" | "text", value: string) {
         const timerKey = `${id}:${field}`;
@@ -96,7 +110,7 @@
                 </button>
                 <button
                     class="btn-icon prompt-note__remove"
-                    onclick={() => removePromptNote(note.id)}
+                    onclick={() => removeNote(note.id)}
                     aria-label="Remove this prompt note"
                     title="Remove"
                 >
@@ -139,6 +153,7 @@
     <div class="prompt-note-add-wrap" role="listitem">
         <button
             class="prompt-note-add"
+            bind:this={addNoteButton}
             onclick={onAdd}
             aria-label="Add a new prompt note"
         >
@@ -191,7 +206,7 @@
         font-size: 0.8125rem;
         resize: vertical;
         background: transparent;
-        border: 1px solid var(--note-edge, var(--clr-border-2));
+        border: 1px solid var(--clr-input-border);
     }
     .prompt-note-add-wrap {
         flex-shrink: 0;

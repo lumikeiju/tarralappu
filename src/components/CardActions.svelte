@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Sketch, Chain } from "../lib/db/schema";
+    import { tick } from "svelte";
     import { elidedRequestJson } from "../lib/openrouter/compose";
     import {
         retrySketch,
@@ -13,6 +14,7 @@
         sketch,
         chain,
         pendingTrash,
+        pendingTrashCount,
         onTrashClick,
         onTrashConfirm,
         onTrashCancel
@@ -20,6 +22,7 @@
         sketch: Sketch;
         chain: Chain;
         pendingTrash: boolean;
+        pendingTrashCount: number;
         onTrashClick: () => void;
         onTrashConfirm: () => void;
         onTrashCancel: () => void;
@@ -27,6 +30,28 @@
 
     let showSource = $state(false);
     let copyStatus = $state("");
+    let sourceToggleBtn = $state<HTMLButtonElement>();
+    let trashBtn = $state<HTMLButtonElement>();
+    let cancelTrashBtn = $state<HTMLButtonElement>();
+
+    // Focus Cancel (not Delete) so a stray Enter can't destroy cards.
+    async function requestTrash() {
+        onTrashClick();
+        await tick();
+        cancelTrashBtn?.focus();
+    }
+
+    async function cancelTrash() {
+        onTrashCancel();
+        await tick();
+        trashBtn?.focus();
+    }
+
+    async function closeSource() {
+        showSource = false;
+        await tick();
+        sourceToggleBtn?.focus();
+    }
 
     const sourceJson = $derived(
         sketch.requestSnapshot
@@ -67,6 +92,7 @@
             await forkReroll(sketch.id, Number(forkCount) as ForkCount);
             forkStatus = `Created ${forkCount} re-run ${forkCount === "1" ? "fork" : "forks"}.`;
         } catch (error) {
+            forkStatus = "";
             forkError =
                 error instanceof Error
                     ? error.message
@@ -121,6 +147,7 @@
     {#if sketch.requestSnapshot || sketch.status === "done"}
         <button
             class="btn-icon"
+            bind:this={sourceToggleBtn}
             onclick={() => (showSource = !showSource)}
             aria-expanded={showSource}
             aria-label="View request source"
@@ -235,7 +262,8 @@
     {#if !pendingTrash}
         <button
             class="btn-icon trash-btn"
-            onclick={onTrashClick}
+            bind:this={trashBtn}
+            onclick={requestTrash}
             aria-label="Trash this card and descendants"
             title="Trash"
         >
@@ -244,9 +272,14 @@
     {:else}
         <span class="trash-confirm-row">
             <button class="btn-danger confirm-btn" onclick={onTrashConfirm}
-                >Delete</button
+                >Delete {pendingTrashCount}
+                {pendingTrashCount === 1 ? "card" : "cards"}</button
             >
-            <button class="btn-ghost" onclick={onTrashCancel}>Cancel</button>
+            <button
+                class="btn-ghost"
+                bind:this={cancelTrashBtn}
+                onclick={cancelTrash}>Cancel</button
+            >
         </span>
     {/if}
 </div>
@@ -267,11 +300,12 @@
             >
             <button
                 class="btn-icon"
-                onclick={() => (showSource = false)}
-                aria-label="Close">✕</button
+                onclick={closeSource}
+                aria-label="Close request source">✕</button
             >
         </div>
-        <pre class="source-pre"><code>{sourceJson}</code></pre>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <pre class="source-pre" tabindex="0"><code>{sourceJson}</code></pre>
     </div>
 {/if}
 

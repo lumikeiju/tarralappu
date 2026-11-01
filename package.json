@@ -1,6 +1,6 @@
 {
   "name": "tarralappu",
-  "version": "1.12.2",
+  "version": "1.12.3",
   "private": true,
   "type": "module",
   "description": "Sticky-note harness for AI image generation via OpenRouter",
@@ -14,18 +14,18 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "idb": "^8.0.3",
-    "svelte": "^5.56.6"
+    "idb": "^8.0.4",
+    "svelte": "^5.57.3"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tsconfig/svelte": "^5.0.8",
-    "@types/bun": "^1.3.14",
+    "@types/bun": "^1.4.4",
     "@typescript/native-preview": "^7.0.0-dev.20260707.2",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.10",
     "prettier-plugin-svelte": "^4.1.1",
-    "svelte-check": "^4.7.3",
+    "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5"
+    "vite": "^8.3.5"
   }
 }

@@ -1,10 +1,21 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import { getChainsOrdered } from "../lib/state/board.svelte";
     import Chain from "./Chain.svelte";
     import NewChainComposer from "./NewChainComposer.svelte";
 
     let showComposer = $state(false);
+    let newSketchBtn = $state<HTMLButtonElement>();
     const chainsOrdered = $derived(getChainsOrdered());
+
+    async function closeComposer(createdSketchId?: string) {
+        showComposer = false;
+        await tick();
+        const draftPrompt = createdSketchId
+            ? document.getElementById(`prompt-${createdSketchId}`)
+            : null;
+        (draftPrompt ?? newSketchBtn)?.focus();
+    }
 </script>
 
 <section class="board" aria-label="Sketch board">
@@ -19,14 +30,15 @@
     {/if}
 
     {#each chainsOrdered as chain (chain.id)}
-        <Chain {chain} />
+        <Chain {chain} onRemoved={() => newSketchBtn?.focus()} />
     {/each}
 
     {#if showComposer}
-        <NewChainComposer onCancel={() => (showComposer = false)} />
+        <NewChainComposer onClose={closeComposer} />
     {:else}
         <button
             class="new-sketch-btn"
+            bind:this={newSketchBtn}
             onclick={() => (showComposer = true)}
             aria-label="Create a new sketch"
         >
@@ -98,7 +110,7 @@
     .new-sketch-btn:hover {
         border-color: var(--clr-accent);
         color: var(--clr-accent);
-        background: rgba(0, 87, 168, 0.04);
+        background: color-mix(in srgb, var(--clr-accent) 4%, transparent);
     }
     .new-sketch-plus {
         font-size: 1.25rem;

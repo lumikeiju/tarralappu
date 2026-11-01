@@ -143,6 +143,19 @@ export async function initBoard(): Promise<void> {
   boardState.chains = chains;
   boardState.sketches = allSketches;
 
+  const interrupted = allSketches.filter(
+    (sketch) => sketch.status === "queued" || sketch.status === "generating"
+  );
+  for (const sketch of interrupted) {
+    Object.assign(sketch, {
+      status: "error",
+      error:
+        "Interrupted — the page was closed or reloaded before generation finished.",
+      errorRaw: null
+    });
+  }
+  await Promise.all(interrupted.map(saveSketch));
+
   // Load models in background (no key needed)
   void loadAvailableModels();
 }
@@ -325,8 +338,6 @@ export async function createRefinementSketch(
   if (chainSketches.at(-1)?.id !== parent.id) {
     throw new Error("Only the latest sketch in a chain can be refined");
   }
-  const board = boardState.board;
-
   const sketch: Sketch = {
     id: newId(),
     chainId: parent.chainId,
@@ -387,7 +398,8 @@ export function submitSketch(sketchId: ID): void {
   void updateSketch(sketchId, {
     status: "queued",
     error: null,
-    errorRaw: null
+    errorRaw: null,
+    costEstimateUsd: null
   });
 
   queue.enqueue({
@@ -426,34 +438,9 @@ async function runGeneration(
     return;
   }
 
-  // Cost cap pre-flight
-  const estimate = estimateCost(capabilities, sketch.outputCount ?? 1);
-  if (estimate !== null) {
-    const sessionCap = board.settings.sessionCostCapUsd;
-    if (sessionCap !== null && getSessionCostTotal() + estimate > sessionCap) {
-      await updateSketch(sketchId, {
-        status: "error",
-        error:
-          "Session cost cap would be exceeded. Increase the cap or clear existing cost.",
-        errorRaw: null
-      });
-      return;
-    }
-    const chainCap = chain.chainCostCapUsd;
-    if (chainCap !== null && chainCostTotal(chain.id) + estimate > chainCap) {
-      await updateSketch(sketchId, {
-        status: "error",
-        error:
-          "Chain cost cap would be exceeded. Increase the cap or clear existing cost.",
-        errorRaw: null
-      });
-      return;
-    }
-    await updateSketch(sketchId, { costEstimateUsd: estimate });
-  }
-
   await updateSketch(sketchId, { status: "generating" });
 
+  const stagedImageIds: ID[] = [];
   try {
     const chainSketches = sketchesForChain(sketch.chainId);
 
@@ -469,7 +456,7 @@ async function runGeneration(
       }
     });
 
-    // Block if over cap after composition (e.g. unexpected i2i refs)
+    // Validate the effective input count before estimating or sending.
     if (composed.inputImageCount < capabilities.minInputImages) {
       await updateSketch(sketchId, {
         status: "error",
@@ -485,6 +472,36 @@ async function runGeneration(
         errorRaw: null
       });
       return;
+    }
+
+    const estimate = estimateCost(capabilities, composed.inputImageCount);
+    if (estimate !== null) {
+      const sessionCap = board.settings.sessionCostCapUsd;
+      if (
+        sessionCap !== null &&
+        getSessionCostTotal() + estimate > sessionCap
+      ) {
+        await updateSketch(sketchId, {
+          status: "error",
+          error:
+            "Session cost cap would be exceeded. Increase the cap or clear existing cost.",
+          errorRaw: null
+        });
+        return;
+      }
+      const chainCap = chain.chainCostCapUsd;
+      if (chainCap !== null && chainCostTotal(chain.id) + estimate > chainCap) {
+        await updateSketch(sketchId, {
+          status: "error",
+          error:
+            "Chain cost cap would be exceeded. Increase the cap or clear existing cost.",
+          errorRaw: null
+        });
+        return;
+      }
+      await updateSketch(sketchId, { costEstimateUsd: estimate });
+    } else {
+      await updateSketch(sketchId, { costEstimateUsd: null });
     }
 
     const onImages = (images: { image_url: { url: string } }[]) => {
@@ -533,12 +550,11 @@ async function runGeneration(
     }
 
     // Store generated images as Blobs
-    const resultImageIds: ID[] = [];
     for (const imgItem of response.choices[0].message.images) {
       const dataUrl = imgItem.image_url.url;
       const blob = await dataUrlToBlob(dataUrl);
       const stored = await storeImageBlob(blob, "generated");
-      resultImageIds.push(stored.id);
+      stagedImageIds.push(stored.id);
     }
 
     // Parse cost
@@ -547,21 +563,33 @@ async function runGeneration(
       actualCost = await fetchGenerationCost(response.id, apiKey);
     }
 
+    if (controller.signal.aborted) {
+      const imageIds = stagedImageIds.splice(0);
+      await decrementRefCountAndMaybeDelete(imageIds);
+      return;
+    }
+
     await updateSketch(sketchId, {
       status: "done",
-      resultImageIds,
+      resultImageIds: [...stagedImageIds],
       costActualUsd: actualCost,
       requestSnapshot: composed.snapshot,
       error: null,
       errorRaw: null
     });
+    stagedImageIds.length = 0;
   } catch (e) {
+    if (stagedImageIds.length > 0) {
+      const imageIds = stagedImageIds.splice(0);
+      await decrementRefCountAndMaybeDelete(imageIds);
+    }
     if (e instanceof DOMException && e.name === "AbortError") {
       // Cancelled by trash — don't update status (sketch is being deleted)
       return;
     }
     await updateSketch(sketchId, {
       status: "error",
+      resultImageIds: [],
       error: humanizeError(e),
       errorRaw: rawErrorDetails(e)
     });
@@ -839,7 +867,7 @@ export async function forkReroll(
   return forks;
 }
 
-/** Create one to four refinement branches from a completed parent.
+/** Create one to ten refinement branches from a completed parent.
  * A draft/error refinement resolves to its completed parent, enabling siblings
  * before the first refinement is generated while preserving the draft's
  * prompt and settings. */

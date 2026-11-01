@@ -75,6 +75,8 @@ export interface SketchRequestSnapshot {
     stream: boolean;
     imageRefs: ID[];
   };
+  reasoning?: { effort: "low" | "medium" | "high" };
+  /** Legacy (pre-v1.12.3) snapshots recorded reasoning under this unsupported field. */
   provider?: { reasoning_effort?: "low" | "medium" | "high" };
   stream: boolean;
   messages: Array<{

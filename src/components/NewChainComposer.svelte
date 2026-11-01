@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import ModelPicker from "./ModelPicker.svelte";
     import {
         boardState,
@@ -7,7 +8,11 @@
     } from "../lib/state/board.svelte";
     import { settings } from "../lib/state/settings.svelte";
 
-    const { onCancel }: { onCancel: () => void } = $props();
+    const { onClose }: { onClose: (createdSketchId?: string) => void } =
+        $props();
+
+    let promptInput = $state<HTMLTextAreaElement>();
+    onMount(() => promptInput?.focus());
 
     let modelId = $state<string | null>(
         boardState.board?.settings.defaultModelId ??
@@ -23,8 +28,12 @@
         submitting = true;
         try {
             const chain = await createChain(modelId);
-            await createRootSketch(chain.id, prompt.trim(), modelId);
-            onCancel();
+            const sketch = await createRootSketch(
+                chain.id,
+                prompt.trim(),
+                modelId
+            );
+            onClose(sketch.id);
         } finally {
             submitting = false;
         }
@@ -41,6 +50,7 @@
     <label for="root-prompt" class="composer__prompt-label">Prompt</label>
     <textarea
         id="root-prompt"
+        bind:this={promptInput}
         bind:value={prompt}
         rows={3}
         placeholder="Describe what to generate…"
@@ -54,7 +64,7 @@
         >
             {submitting ? "Creating…" : "Create Draft"}
         </button>
-        <button type="button" class="btn-ghost" onclick={onCancel}
+        <button type="button" class="btn-ghost" onclick={() => onClose()}
             >Cancel</button
         >
     </div>
