@@ -4,6 +4,16 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v1.12.3 (2026-10-31)
+
+### Fixes
+
+- Switched Dependabot to the Bun ecosystem and ignored TypeScript major-version updates that are incompatible with the current Svelte language-tools bridge.
+- Corrected image request reasoning fields and validate model-specific option values before sending requests; pre-send cost estimates now use composed input-image counts and clean up staged images when generation is interrupted.
+- Recover queued or generating sketches as interrupted errors after reload, and surface initialization failures with a retry action.
+- Improved keyboard focus management, control names and states, color contrast, scrollable content access, and external-link indicators.
+- Restored the missing and misordered historical changelog entries.
+
 ## v1.12.2 (2026-09-13)
 
 ### Fixes
@@ -28,6 +38,12 @@
 
 - Added initial-run forks for root drafts, with a 1–10 multiplier, copying the model and generation settings into independent editable draft chains so prompt variants can be prepared before generating.
 
+## v1.10.1 (2026-09-13)
+
+### Fixes
+
+- Prevented long error URLs, raw API responses, and other card text from overflowing fixed sketch-card bounds.
+
 ## v1.10.0 (2026-07-18)
 
 ### Features
@@ -41,13 +57,11 @@
 
 ### Fixes
 
+- Updated the build check to use TypeScript 7's native preview compiler through `svelte-check`'s supported `--tsgo-experimental-api` integration, while retaining TypeScript 6 only for the currently published Svelte language-tools API bridge. This prevents the TypeScript 7 module-export crash and keeps the production build on the current compiler line.
+
+## v1.9.1 (2026-07-18)
+
 ### Fixes
-
-## v1.10.1 (2026-09-13)
-
-### Fixes
-
-- Prevented long error URLs, raw API responses, and other card text from overflowing fixed sketch-card bounds.
 
 - Upgraded the Svelte/Vite toolchain and TypeScript together so `svelte-check` supports the current TypeScript 6 release without the previous compatibility crash.
 

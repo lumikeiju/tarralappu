@@ -1,5 +1,9 @@
 <script lang="ts">
     import type { ModelCapabilities } from "../lib/openrouter/types";
+    import {
+        effectiveOption,
+        supportsReasoningEffort
+    } from "../lib/openrouter/capabilities";
 
     export interface ResolutionUpdate {
         aspectRatio?: string;
@@ -53,6 +57,31 @@
     const maxOutputs = $derived(capabilities?.maxOutputs ?? 1);
     const supportsSeed = $derived(capabilities?.supportsSeed ?? false);
     const canStream = $derived(capabilities?.supportsStreaming ?? false);
+    const outputCountValue = $derived(
+        Number.isFinite(outputCount)
+            ? Math.min(maxOutputs, Math.max(1, Math.trunc(outputCount)))
+            : 1
+    );
+    const seedValue = $derived(
+        typeof seed === "number" && Number.isSafeInteger(seed) && seed >= 0
+            ? seed
+            : ""
+    );
+    const compressionValue = $derived(
+        typeof outputCompression !== "number" ||
+            !Number.isFinite(outputCompression) ||
+            !compressionRange
+            ? ""
+            : String(
+                  Math.min(
+                      compressionRange.max,
+                      Math.max(
+                          compressionRange.min,
+                          Math.trunc(outputCompression)
+                      )
+                  )
+              )
+    );
     const hasOutputControls = $derived(
         maxOutputs > 1 ||
             outputFormats.length > 0 ||
@@ -64,15 +93,25 @@
             canStream ||
             hasOutputControls
     );
-    const isReasoningModel = $derived(
-        capabilities?.id === "openai/gpt-5.4-image-2"
+    const isReasoningModel = $derived(supportsReasoningEffort(capabilities));
+    const aspectRatioValue = $derived(
+        effectiveOption(aspectRatio, aspectRatios) ?? ""
+    );
+    const imageSizeValue = $derived(
+        effectiveOption(imageSize, imageSizes) ?? ""
     );
 
     // These enums (per OpenRouter's image model discovery) always include
     // "auto" — use it as the displayed default until the user picks explicitly.
-    const qualityValue = $derived(quality ?? "auto");
-    const backgroundValue = $derived(background ?? "auto");
-    const outputFormatValue = $derived(outputFormat ?? "");
+    const qualityValue = $derived(
+        effectiveOption(quality ?? "auto", qualities) ?? ""
+    );
+    const backgroundValue = $derived(
+        effectiveOption(background ?? "auto", backgrounds) ?? ""
+    );
+    const outputFormatValue = $derived(
+        outputFormat && outputFormats.includes(outputFormat) ? outputFormat : ""
+    );
 
     function setOutputCount(value: string) {
         const parsed = Number(value);
@@ -104,7 +143,12 @@
         }
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) return;
-        onChange({ seed: Math.max(0, Math.trunc(parsed)) });
+        onChange({
+            seed: Math.min(
+                Number.MAX_SAFE_INTEGER,
+                Math.max(0, Math.trunc(parsed))
+            )
+        });
     }
 </script>
 
@@ -114,7 +158,7 @@
             <label class="res-label">
                 <span>Aspect</span>
                 <select
-                    value={aspectRatio}
+                    value={aspectRatioValue}
                     onchange={(e) =>
                         onChange({
                             aspectRatio: (e.target as HTMLSelectElement).value
@@ -132,7 +176,7 @@
             <label class="res-label">
                 <span>Size</span>
                 <select
-                    value={imageSize}
+                    value={imageSizeValue}
                     onchange={(e) =>
                         onChange({
                             imageSize: (e.target as HTMLSelectElement).value
@@ -191,7 +235,7 @@
                     min="1"
                     max={maxOutputs}
                     step="1"
-                    value={outputCount}
+                    value={outputCountValue}
                     onchange={(e) =>
                         setOutputCount((e.target as HTMLInputElement).value)}
                 />
@@ -227,7 +271,7 @@
                     min={compressionRange.min}
                     max={compressionRange.max}
                     step="1"
-                    value={outputCompression ?? ""}
+                    value={compressionValue}
                     placeholder="Auto"
                     onchange={(e) =>
                         setCompression((e.target as HTMLInputElement).value)}
@@ -247,7 +291,7 @@
                     type="number"
                     min="0"
                     step="1"
-                    value={seed ?? ""}
+                    value={seedValue}
                     placeholder="Random"
                     onchange={(e) =>
                         setSeed((e.target as HTMLInputElement).value)}
@@ -296,10 +340,9 @@
                     Stream
                 </label>
                 <p id="{uid}-stream-hint" class="stream-hint">
-                    Lets trashing a generating card stop billing immediately
-                    instead of finishing in the background. This model sends the
-                    finished image in one piece near the end regardless, so no
-                    partial preview is available.
+                    Shows partial previews while the image renders, when the
+                    provider sends them. Cancelled generations aren't billed
+                    either way.
                 </p>
             </div>
         {/if}

@@ -188,7 +188,7 @@ interface Sketch {
     attach: AttachFlags;
     aspectRatio: string;
     imageSize: string;
-    reasoningEffort: "low" | "medium" | "high" | null; // chat-completions image tool only
+    reasoningEffort: "low" | "medium" | "high" | null; // supported chat-completions models only
     outputCount?: number;
     outputFormat?: string | null;
     outputCompression?: number | null;
@@ -232,7 +232,8 @@ interface SketchRequestSnapshot {
         stream: boolean;
         imageRefs: ID[];
     };
-    provider?: { reasoning_effort?: "low" | "medium" | "high" };
+    reasoning?: { effort: "low" | "medium" | "high" };
+    provider?: { reasoning_effort?: "low" | "medium" | "high" }; // legacy snapshots only
     messages: Array<{
         role: "user" | "assistant";
         text: string;
@@ -361,11 +362,11 @@ No hand-curated override table — when discovery data is missing for a model (f
 
 ### 5.5 Cost
 
-- **Pre-send estimate** (`estimateCost`): computed from the model's flat `pricing.image`/`pricing.request` fields when populated. Returns `null` for token-billed models or models whose cost isn't captured by these fields — `costActualUsd` is always the source of truth.
+- **Pre-send estimate** (`estimateCost`): a lower bound computed as `pricing.request + pricing.image × composed.inputImageCount`, when those per-request/per-input-image fields produce a positive estimate. `pricing.image` is the input-image rate, not the output-image rate. Returns `null` for token-billed models or models whose cost isn't captured by these fields — `costActualUsd` is always the source of truth.
 - **Prompt caching:** a resent conversational thread typically hits the provider's prompt cache at a discount, so real cost is usually **below** the naive full-thread estimate. Estimates are shown with an explicit "may be inexact" caveat.
 - **Actual cost:** read from `usage.cost`/`usage.total_cost` in the response (`parseCostFromResponse`). If absent, fall back to `GET /api/v1/generation?id=<id>` (`fetchGenerationCost`). Persisted as `Sketch.costActualUsd`.
 - **Inline pricing display** (`formatModelPricing`, `pricingTier` in `cost.ts`): per the [Pricing Object](https://openrouter.ai/docs/guides/overview/models#pricing-object) fields, shown per-million-tokens / per-image / per-request, whichever apply; a `:free`-suffixed model id shows "Free" instead of the ambiguous zero. `pricingTier` buckets the dominant pricing dimension into a `$`/`$$`/`$$$` badge — a relative hint, not an exact cross-model comparison.
-- Current `image_output` and `image_token` catalog fields are shown as per-million image rates, but are not used as flat preflight estimates. Dedicated responses' `usage.cost` remains authoritative.
+- Current `image_output` and `image_token` catalog fields are shown as per-million image rates, but are not used as flat preflight estimates. The estimate is calculated after request composition and input-image validation. Dedicated responses' `usage.cost` remains authoritative.
 - **Caps:** see §9.
 
 ---

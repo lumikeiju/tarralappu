@@ -21,7 +21,8 @@
 <button
     class="btn-icon theme-toggle"
     onclick={toggle}
-    aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+    aria-label="Dark theme"
+    aria-pressed={isDark}
     title={isDark ? "Light theme" : "Dark theme"}
 >
     {isDark ? "☀" : "☾"}

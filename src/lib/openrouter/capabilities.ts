@@ -13,16 +13,11 @@ const FALLBACK_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const FALLBACK_IMAGE_SIZES = ["1K"];
 
 // OpenAI's GPT-5/5.4 image models generate images by having an LLM call a
-// tool (OpenAI's Responses API `image_generation` tool), not through
-// OpenRouter's dedicated Image API — see
-// https://openrouter.ai/blog/announcements/image-api/ FAQ: "GPT 5 and 5.4
-// versions generate images through an LLM, so they don't provide access to
-// the full set of supported parameters". Tarralappu talks to these models
-// via /chat/completions (not /images), so the `/images/models` discovery
-// endpoint's `supported_parameters` — which lists only `quality`/
-// `background` for them — describes a *different* API surface and doesn't
-// mean aspect_ratio/image_size are unsupported here. These are the same
-// values that worked via image_config before the discovery migration.
+// tool rather than through a dedicated image endpoint — see
+// https://openrouter.ai/blog/announcements/image-api/ FAQ. These models are
+// normally listed by `/images/models` and routed through the Image API with
+// their discovery parameters. If discovery is unavailable and they fall back
+// to /chat/completions, these are the image_config values known to work there.
 const CHAT_COMPLETIONS_IMAGE_TOOL_MODELS = new Set([
   "openai/gpt-5-image",
   "openai/gpt-5-image-mini",
@@ -41,6 +36,9 @@ const CHAT_COMPLETIONS_ASPECT_RATIOS = [
   "21:9"
 ];
 const CHAT_COMPLETIONS_IMAGE_SIZES = ["1K", "2K", "4K"];
+// The Image API has no reasoning parameter, so the effort control applies
+// only when one of these models is served through /chat/completions.
+const REASONING_EFFORT_MODELS = new Set(["openai/gpt-5.4-image-2"]);
 
 function enumValues(desc: ParameterDescriptor | undefined): string[] | null {
   return desc?.type === "enum" ? desc.values : null;
@@ -92,10 +90,9 @@ export function resolveCapabilities(
       : discovery
         ? []
         : FALLBACK_IMAGE_SIZES);
-  // OpenAI's GPT image models (generated through an LLM, not the dedicated
-  // Image API) don't support aspect_ratio/resolution at all \u2014 discovery
-  // lists `quality`/`background` for them instead. Surface those so the UI
-  // still has *some* image-shape control for these models.
+  // Some models (e.g. OpenAI's GPT image models) expose `quality`/`background`
+  // instead of aspect_ratio/resolution — surface those so the UI still has
+  // *some* image-shape control for them.
   const quality = enumValues(params?.quality) ?? [];
   const background = enumValues(params?.background) ?? [];
   const inputReferences = params?.input_references;
@@ -134,11 +131,8 @@ export function resolveCapabilities(
       imageSizes.length > 0 ||
       quality.length > 0 ||
       background.length > 0,
-    // OpenRouter's discovery marks this true only for OpenAI's GPT image
-    // models today. Whether /chat/completions actually forwards partial
-    // image previews for `stream: true` (vs. only text deltas) is
-    // unconfirmed — see chatCompletionStream() in client.ts — but the flag
-    // itself is accurate: these models do support SSE streaming.
+    // From discovery, so only Image API models can stream; their SSE events
+    // carry partial previews (see imageGenerationStream() in client.ts).
     supportsStreaming: discovery?.supports_streaming ?? false,
     estimated: discovery === undefined,
     pricing: model.pricing
@@ -151,4 +145,28 @@ export function resolveAllCapabilities(
 ): ModelCapabilities[] {
   const byId = new Map(discoveryEntries.map((d) => [d.id, d]));
   return models.map((m) => resolveCapabilities(m, byId.get(m.id)));
+}
+
+/**
+ * Resolve a stored option against a model's accepted values: the value itself
+ * when allowed, otherwise the model's first listed value (e.g. a default "1K"
+ * on a model that only accepts ["2K", "4K"]). Undefined when the model lists
+ * no values, meaning the parameter should not be sent.
+ */
+export function effectiveOption(
+  value: string | null | undefined,
+  allowed: readonly string[]
+): string | undefined {
+  if (allowed.length === 0) return undefined;
+  return value && allowed.includes(value) ? value : allowed[0];
+}
+
+/** Whether the model accepts OpenRouter's `reasoning` parameter. */
+export function supportsReasoningEffort(
+  capabilities: ModelCapabilities | undefined
+): boolean {
+  return (
+    capabilities?.generationApi === "chat" &&
+    REASONING_EFFORT_MODELS.has(capabilities.id)
+  );
 }

@@ -30,6 +30,21 @@
                 />
             </svg>
             GitHub
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 16 16"
+                width="12"
+                height="12"
+                fill="currentColor"
+                aria-hidden="true"
+            >
+                <path
+                    d="M10 2h4v4h-1.5V4.56L7.53 9.53 6.47 8.47l4.97-4.97H10V2Z"
+                />
+                <path
+                    d="M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4v1.5H3.5v7H11V9H12Z"
+                />
+            </svg>
             <span class="sr-only"> (opens in a new tab)</span>
         </a>
     </div>

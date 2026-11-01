@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Chain } from "../lib/db/schema";
+    import { tick } from "svelte";
     import {
         sketchesForChain,
         chainCostTotal,
@@ -8,20 +9,28 @@
         updateChain,
         boardState
     } from "../lib/state/board.svelte";
-    import { capabilitiesFor } from "../lib/state/board.svelte";
     import { formatUsd } from "../lib/openrouter/cost";
     import SketchCard from "./SketchCard.svelte";
 
-    const { chain }: { chain: Chain } = $props();
+    const { chain, onRemoved }: { chain: Chain; onRemoved?: () => void } =
+        $props();
 
     const sketches = $derived(sketchesForChain(chain.id));
     const chainTotal = $derived(chainCostTotal(chain.id));
-    const caps = $derived(capabilitiesFor(chain.modelId));
     const lastSketch = $derived(sketches[sketches.length - 1]);
     const canRefine = $derived(lastSketch?.status === "done");
 
+    let cardsRow = $state<HTMLDivElement>();
+    let refineBtn = $state<HTMLButtonElement>();
+
     // Trash state: which order index triggered the pending-trash
     let pendingTrashFrom = $state<number | null>(null);
+    const pendingTrashCount = $derived.by(() => {
+        const from = pendingTrashFrom;
+        return from === null
+            ? 0
+            : sketches.filter((s) => s.order >= from).length;
+    });
 
     function onTrashClick(order: number) {
         pendingTrashFrom = order;
@@ -34,11 +43,22 @@
         const from = pendingTrashFrom;
         pendingTrashFrom = null;
         await trashSketchesFrom(chain.id, from);
+        if (sketchesForChain(chain.id).length === 0) {
+            onRemoved?.();
+            return;
+        }
+        // The focused Delete button is gone; land on the nearest survivor.
+        await tick();
+        const trashBtns =
+            cardsRow?.querySelectorAll<HTMLButtonElement>(".trash-btn");
+        (refineBtn ?? trashBtns?.[trashBtns.length - 1])?.focus();
     }
 
     async function addRefinement() {
         if (!lastSketch) return;
-        await createRefinementSketch(lastSketch.id);
+        const draft = await createRefinementSketch(lastSketch.id);
+        await tick();
+        document.getElementById(`prompt-${draft.id}`)?.focus();
     }
 
     let capInput = $state("");
@@ -95,7 +115,12 @@
     </header>
 
     <!-- Cards row with decorative connector -->
-    <div class="cards-row" role="list" aria-label="Sketch chain">
+    <div
+        class="cards-row"
+        role="list"
+        aria-label="Sketch chain"
+        bind:this={cardsRow}
+    >
         {#each sketches as sketch, i (sketch.id)}
             {#if i > 0}
                 <div class="card-connector" aria-hidden="true">
@@ -117,6 +142,7 @@
                     {sketch}
                     {chain}
                     {pendingTrashFrom}
+                    {pendingTrashCount}
                     {onTrashClick}
                     {onTrashConfirm}
                     {onTrashCancel}
@@ -142,6 +168,7 @@
             <div class="ghost-card-wrap" role="listitem">
                 <button
                     class="ghost-refine-card"
+                    bind:this={refineBtn}
                     onclick={addRefinement}
                     aria-label="Add refinement sketch"
                 >
@@ -260,7 +287,7 @@
     .ghost-refine-card:hover {
         border-color: var(--clr-accent);
         color: var(--clr-accent);
-        background: rgba(0, 87, 168, 0.04);
+        background: color-mix(in srgb, var(--clr-accent) 4%, transparent);
     }
     .ghost-plus {
         font-size: 1.5rem;

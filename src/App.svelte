@@ -12,6 +12,7 @@
     import Footer from "./components/Footer.svelte";
 
     let ready = $state(false);
+    let initializationError = $state<string | null>(null);
     let authoringOpen = $state(true);
     let promptBoardOpen = $state(false);
 
@@ -29,10 +30,21 @@
         }
     });
 
-    onMount(async () => {
-        await initSettings();
-        await initBoard();
-        ready = true;
+    async function initialize() {
+        initializationError = null;
+        try {
+            await initSettings();
+            await initBoard();
+            ready = true;
+        } catch (error) {
+            console.error("Could not initialize Tarralappu", error);
+            initializationError =
+                "Could not load saved data. Check browser storage permissions and try again.";
+        }
+    }
+
+    onMount(() => {
+        void initialize();
     });
 </script>
 
@@ -99,6 +111,13 @@
         </details>
 
         <Board />
+    {:else if initializationError}
+        <div class="initialization-error">
+            <p role="alert">{initializationError}</p>
+            <button class="btn-primary" onclick={() => void initialize()}>
+                Try again
+            </button>
+        </div>
     {:else}
         <div class="loading-screen" aria-live="polite" aria-busy="true">
             <span class="spinner" aria-hidden="true"></span>
@@ -191,5 +210,18 @@
         min-height: 200px;
         color: var(--clr-text-3);
         font-size: 0.9375rem;
+    }
+    .initialization-error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        min-height: 200px;
+        padding: 32px 20px;
+        color: var(--clr-danger);
+        text-align: center;
+    }
+    .initialization-error p {
+        margin: 0;
     }
 </style>

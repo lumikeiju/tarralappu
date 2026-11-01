@@ -8,7 +8,7 @@
         createObjectUrl,
         revokeObjectUrl
     } from "../lib/db/images";
-    import { onDestroy } from "svelte";
+    import { onDestroy, tick } from "svelte";
 
     // Object URLs for display — revoke on teardown
     let styleRefUrl = $state<string | null>(null);
@@ -51,6 +51,8 @@
 
     let styleError = $state<string | null>(null);
     let layoutError = $state<string | null>(null);
+    let styleUploadInput = $state<HTMLInputElement>();
+    let layoutUploadInput = $state<HTMLInputElement>();
 
     async function uploadStyle(e: Event) {
         const file = (e.target as HTMLInputElement).files?.[0];
@@ -76,12 +78,16 @@
         const id = boardState.board?.settings.styleRefImageId;
         if (id) await deleteGlobalImage(id);
         await updateBoardSettings({ styleRefImageId: null });
+        await tick();
+        styleUploadInput?.focus();
     }
 
     async function removeLayout() {
         const id = boardState.board?.settings.layoutRefImageId;
         if (id) await deleteGlobalImage(id);
         await updateBoardSettings({ layoutRefImageId: null });
+        await tick();
+        layoutUploadInput?.focus();
     }
 </script>
 
@@ -112,6 +118,7 @@
                 <label class="upload-label">
                     <input
                         type="file"
+                        bind:this={styleUploadInput}
                         accept="image/png,image/jpeg,image/webp"
                         onchange={uploadStyle}
                         class="sr-only"
@@ -152,6 +159,7 @@
                 <label class="upload-label">
                     <input
                         type="file"
+                        bind:this={layoutUploadInput}
                         accept="image/png,image/jpeg,image/webp"
                         onchange={uploadLayout}
                         class="sr-only"

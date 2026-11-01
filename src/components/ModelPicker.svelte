@@ -62,7 +62,7 @@
 
 <div class="model-picker">
     <div class="picker-header">
-        <span class="picker-label">Model</span>
+        <span id="{groupName}-label" class="picker-label">Model</span>
         {#if boardState.modelsLoading}
             <span class="loading-hint" role="status" aria-live="polite"
                 >Loading models…</span
@@ -83,7 +83,11 @@
         disabled={boardState.modelsLoading}
     />
 
-    <div class="model-groups">
+    <div
+        class="model-groups"
+        role="radiogroup"
+        aria-labelledby="{groupName}-label"
+    >
         {#if pinnedModels.length > 0}
             <fieldset class="creator-group pinned-group">
                 <legend>PINNED</legend>
@@ -121,7 +125,7 @@
                             class="pin-btn"
                             class:pinned={isPinned(m.id)}
                             aria-pressed={isPinned(m.id)}
-                            aria-label="Unpin {m.name}"
+                            aria-label="Pin {m.name}"
                             title="Unpin model"
                             disabled={boardState.modelsLoading}
                             onclick={() => void togglePinnedModel(m.id)}
@@ -175,9 +179,7 @@
                             class="pin-btn"
                             class:pinned={isPinned(m.id)}
                             aria-pressed={isPinned(m.id)}
-                            aria-label="{isPinned(m.id)
-                                ? 'Unpin'
-                                : 'Pin'} {m.name}"
+                            aria-label="Pin {m.name}"
                             title={isPinned(m.id) ? "Unpin model" : "Pin model"}
                             disabled={boardState.modelsLoading}
                             onclick={() => void togglePinnedModel(m.id)}

@@ -11,6 +11,7 @@ import type {
   ID,
   SketchRequestSnapshot
 } from "../db/schema";
+import { effectiveOption, supportsReasoningEffort } from "./capabilities";
 
 export interface ComposeInput {
   sketch: Sketch;
@@ -224,30 +225,58 @@ async function composeImageApiRequest(
     prompt,
     stream: capabilities.supportsStreaming && sketch.streamEnabled
   };
+  const requestedOutputCount =
+    typeof sketch.outputCount === "number" &&
+    Number.isFinite(sketch.outputCount)
+      ? Math.trunc(sketch.outputCount)
+      : 1;
   const outputCount = Math.max(
     1,
-    Math.min(sketch.outputCount ?? 1, capabilities.maxOutputs)
+    Math.min(requestedOutputCount, capabilities.maxOutputs)
   );
   if (capabilities.maxOutputs > 1 && outputCount > 1) body.n = outputCount;
-  if (capabilities.aspectRatios.length > 0) {
-    body.aspect_ratio = sketch.aspectRatio;
-  }
-  if (capabilities.imageSizes.length > 0) {
-    body.resolution = sketch.imageSize;
-  }
-  if (capabilities.quality.length > 0 && sketch.quality) {
-    body.quality = sketch.quality;
-  }
-  if (capabilities.outputFormats.length > 0 && sketch.outputFormat) {
+  const aspectRatio = effectiveOption(
+    sketch.aspectRatio,
+    capabilities.aspectRatios
+  );
+  if (aspectRatio) body.aspect_ratio = aspectRatio;
+  const resolution = effectiveOption(sketch.imageSize, capabilities.imageSizes);
+  if (resolution) body.resolution = resolution;
+  const quality = effectiveOption(
+    sketch.quality ?? "auto",
+    capabilities.quality
+  );
+  if (quality) body.quality = quality;
+  if (
+    sketch.outputFormat &&
+    capabilities.outputFormats.includes(sketch.outputFormat)
+  ) {
     body.output_format = sketch.outputFormat;
   }
-  if (capabilities.background.length > 0 && sketch.background) {
-    body.background = sketch.background;
+  const background = effectiveOption(
+    sketch.background ?? "auto",
+    capabilities.background
+  );
+  if (background) body.background = background;
+  if (
+    capabilities.outputCompression &&
+    typeof sketch.outputCompression === "number" &&
+    Number.isFinite(sketch.outputCompression)
+  ) {
+    body.output_compression = Math.min(
+      capabilities.outputCompression.max,
+      Math.max(
+        capabilities.outputCompression.min,
+        Math.trunc(sketch.outputCompression)
+      )
+    );
   }
-  if (capabilities.outputCompression && sketch.outputCompression !== null) {
-    body.output_compression = sketch.outputCompression;
-  }
-  if (capabilities.supportsSeed && sketch.seed !== null) {
+  if (
+    capabilities.supportsSeed &&
+    typeof sketch.seed === "number" &&
+    Number.isSafeInteger(sketch.seed) &&
+    sketch.seed >= 0
+  ) {
     body.seed = sketch.seed;
   }
   if (imageRefs.length > 0) {
@@ -430,23 +459,30 @@ export async function composeRequest(
 
   if (supportsImageConfig) {
     const imageConfig: NonNullable<CompletionRequest["image_config"]> = {};
-    if (capabilities.aspectRatios.length > 0) {
-      imageConfig.aspect_ratio = sketch.aspectRatio;
-    }
-    if (capabilities.imageSizes.length > 0) {
-      imageConfig.image_size = sketch.imageSize;
-    }
-    if (capabilities.quality.length > 0 && sketch.quality) {
+    const aspectRatio = effectiveOption(
+      sketch.aspectRatio,
+      capabilities.aspectRatios
+    );
+    if (aspectRatio) imageConfig.aspect_ratio = aspectRatio;
+    const imageSize = effectiveOption(
+      sketch.imageSize,
+      capabilities.imageSizes
+    );
+    if (imageSize) imageConfig.image_size = imageSize;
+    if (sketch.quality && capabilities.quality.includes(sketch.quality)) {
       imageConfig.quality = sketch.quality;
     }
-    if (capabilities.background.length > 0 && sketch.background) {
+    if (
+      sketch.background &&
+      capabilities.background.includes(sketch.background)
+    ) {
       imageConfig.background = sketch.background;
     }
     body.image_config = imageConfig;
   }
 
-  if (sketch.reasoningEffort) {
-    body.provider = { reasoning_effort: sketch.reasoningEffort };
+  if (sketch.reasoningEffort && supportsReasoningEffort(capabilities)) {
+    body.reasoning = { effort: sketch.reasoningEffort };
   }
 
   const snapshot: SketchRequestSnapshot = {
@@ -454,7 +490,7 @@ export async function composeRequest(
     model: sketch.modelId,
     modalities: body.modalities,
     image_config: body.image_config,
-    provider: body.provider,
+    ...(body.reasoning ? { reasoning: body.reasoning } : {}),
     stream: streamRequested,
     messages: snapshotMessages
   };
@@ -503,6 +539,7 @@ export function elidedRequestJson(snapshot: SketchRequestSnapshot): string {
     model: snapshot.model,
     modalities: snapshot.modalities,
     ...(snapshot.image_config ? { image_config: snapshot.image_config } : {}),
+    ...(snapshot.reasoning ? { reasoning: snapshot.reasoning } : {}),
     ...(snapshot.provider ? { provider: snapshot.provider } : {}),
     messages: snapshot.messages.map((msg) => ({
       role: msg.role,

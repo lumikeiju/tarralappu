@@ -149,7 +149,7 @@
         align-items: center;
         justify-content: center;
         background: rgba(0, 0, 0, 0.6);
-        color: #fff;
+        color: var(--clr-on-overlay);
         border: 1px solid transparent;
         border-radius: 50%;
         backdrop-filter: blur(4px);

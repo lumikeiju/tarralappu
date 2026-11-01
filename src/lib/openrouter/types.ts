@@ -129,8 +129,8 @@ export interface CompletionRequest {
     quality?: string;
     background?: string;
   };
-  provider?: {
-    reasoning_effort?: "low" | "medium" | "high";
+  reasoning?: {
+    effort: "low" | "medium" | "high";
   };
   stream: boolean;
   usage: { include: true };

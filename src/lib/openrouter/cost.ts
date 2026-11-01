@@ -5,22 +5,20 @@ import type {
 } from "./types";
 
 /**
- * Pre-send cost estimate in USD, from the model's flat per-image/per-request
- * pricing. Returns null when neither is populated (token-billed models, or
- * models whose cost isn't captured by these Pricing Object fields at all) —
- * `costActualUsd` from the response `usage` is always the source of truth.
+ * Lower-bound pre-send estimate in USD from the model's per-input-image and
+ * per-request pricing. Returns null when these fields don't produce a positive
+ * estimate (including token-billed models); `costActualUsd` from response
+ * usage is always the source of truth.
  */
 export function estimateCost(
   capabilities: ModelCapabilities,
-  imageCount = 1
+  inputImageCount: number
 ): number | null {
   const { pricing } = capabilities;
   const imageCost = parseFloat(pricing?.image ?? "0");
   const requestCost = parseFloat(pricing?.request ?? "0");
-
-  if (imageCost > 0) return imageCost * imageCount + requestCost;
-  if (requestCost > 0) return requestCost;
-  return null;
+  const estimate = requestCost + imageCost * inputImageCount;
+  return Number.isFinite(estimate) && estimate > 0 ? estimate : null;
 }
 
 /**
