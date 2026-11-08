@@ -77,6 +77,49 @@ export interface ImageModelDiscoveryResponse {
   data: ImageModelDiscoveryEntry[];
 }
 
+export interface ImageModelEndpoint {
+  provider_name: string;
+  provider_slug: string;
+  provider_tag: string | null;
+  supported_parameters: ImageModelSupportedParameters;
+  allowed_passthrough_parameters: string[];
+  supports_streaming: boolean;
+  pricing: Array<{
+    billable: string;
+    unit: string;
+    cost_usd: number;
+    variant?: string;
+  }>;
+}
+
+export interface ImageModelEndpointsResponse {
+  id: string;
+  endpoints: ImageModelEndpoint[];
+}
+
+export type ImageComplexity = "low" | "medium" | "high";
+export interface AdvancedImageOptions {
+  complexity?: ImageComplexity | null;
+  moderation?: "auto" | "low" | null;
+  size?: string | null;
+  frameCount?: number | null;
+  frameDurationMs?: number | null;
+  partialImages?: number | null;
+}
+
+export interface AdvancedImageCapabilities {
+  endpoint: ImageModelEndpoint | null;
+  complexity: boolean;
+  moderation: boolean;
+  customSize: boolean;
+  markup: boolean;
+  partialImages: { min: number; max: number } | null;
+  frameCount: { min: number; max: number } | null;
+  frameDurationMs: { min: number; max: number } | null;
+  pending: boolean;
+  error: string | null;
+}
+
 // Resolved capabilities (merged from API + overrides)
 export interface ModelCapabilities {
   id: string;
@@ -105,6 +148,7 @@ export interface ModelCapabilities {
   /** true when capabilities were inferred from defaults, not from a curated override */
   estimated: boolean;
   pricing: ModelPricing;
+  advanced: AdvancedImageCapabilities;
 }
 
 // Chat completions
@@ -130,8 +174,10 @@ export interface CompletionRequest {
     background?: string;
   };
   reasoning?: {
-    effort: "low" | "medium" | "high";
+    effort: "none" | "low" | "medium" | "high";
   };
+  max_tokens?: number;
+  temperature?: number;
   stream: boolean;
   usage: { include: true };
 }
@@ -153,6 +199,19 @@ export interface ImageGenerationRequest {
   output_compression?: number;
   seed?: number;
   input_references?: ImageInputReference[];
+  size?: string;
+  frame_count?: number;
+  frame_duration_ms?: number;
+  partial_images?: number;
+  markup?: ImageInputReference;
+  provider?: {
+    only: string[];
+    allow_fallbacks: false;
+    options?: Record<
+      string,
+      { complexity?: ImageComplexity; moderation?: "auto" | "low" }
+    >;
+  };
   stream: boolean;
 }
 
@@ -165,6 +224,17 @@ export interface ImageGenerationResponse {
   created?: number;
   data: ImageGenerationResponseData[];
   usage?: CompletionUsage;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  svg_usage?: {
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    reasoning_tokens: number;
+    total_tokens: number;
+  };
 }
 
 export interface CompletionImageItem {
@@ -202,6 +272,10 @@ export interface CompletionResponse {
   id: string;
   choices: CompletionChoice[];
   usage?: CompletionUsage;
+  imageMetadata?: Pick<
+    ImageGenerationResponse,
+    "size" | "quality" | "background" | "output_format" | "svg_usage"
+  >;
 }
 
 // Streaming (SSE) chunk shapes for `stream: true` requests. `delta.content`

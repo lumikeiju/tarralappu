@@ -10,10 +10,6 @@
 
 <div class="session-cap-section">
     <label for="session-cap" class="panel-label">Session cost cap ($)</label>
-    <p class="panel-hint" id="cap-hint">
-        Stop dispatching when total session cost exceeds this. Estimates may be
-        inexact.
-    </p>
     <input
         id="session-cap"
         type="number"
@@ -25,7 +21,22 @@
         class="cap-input"
         aria-describedby="cap-hint"
     />
-    <p class="panel-hint">Leave blank for no limit.</p>
+    <p class="panel-hint" id="cap-hint">
+        Local estimate only, not a provider billing limit.
+    </p>
+    <details class="cap-details">
+        <summary>How this cap works</summary>
+        <p>
+            Known estimates reserve budget. If a request cannot be estimated,
+            acknowledgment may let it exceed this cap. Set a spending limit in
+            OpenRouter for a provider-enforced billing cap.
+        </p>
+        <p>
+            This local total includes retained sketches and Random text.
+            Deleting a sketch removes its image-generation charges; Random costs
+            remain.
+        </p>
+    </details>
 </div>
 
 <style>
@@ -49,5 +60,13 @@
         width: 120px;
         font-size: 0.875rem;
         padding: 4px 8px;
+    }
+    .cap-details {
+        font-size: 0.75rem;
+    }
+    .cap-details summary {
+        cursor: pointer;
+        min-height: 24px;
+        padding-block: 4px;
     }
 </style>

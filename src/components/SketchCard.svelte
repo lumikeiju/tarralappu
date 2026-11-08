@@ -5,21 +5,29 @@
         streamingPreviews,
         updateSketch,
         submitSketch,
-        capabilitiesFor
+        capabilitiesFor,
+        loadImageEndpoints,
+        generateRandomSketchPrompt,
+        getSessionBudgetUsed,
+        randomTextGeneration
     } from "../lib/state/board.svelte";
+    import { auth } from "../lib/state/settings.svelte";
+    import { humanizeError, rawErrorDetails } from "../lib/openrouter/client";
+    import { formatUsd, estimateCost } from "../lib/openrouter/cost";
     import {
-        getStoredImage,
-        createObjectUrl,
-        revokeObjectUrl
-    } from "../lib/db/images";
-    import { formatUsd } from "../lib/openrouter/cost";
-    import { effectiveOption } from "../lib/openrouter/capabilities";
+        effectiveOption,
+        isGptImage26
+    } from "../lib/openrouter/capabilities";
+    import { effectiveInputImages } from "../lib/openrouter/options";
     import AttachmentChecks from "./AttachmentChecks.svelte";
     import ResolutionControls from "./ResolutionControls.svelte";
     import CardActions from "./CardActions.svelte";
     import Admonition from "./Admonition.svelte";
     import Lightbox from "./Lightbox.svelte";
-    import { onDestroy } from "svelte";
+    import MediaPreview from "./MediaPreview.svelte";
+    import ImageAdvancedControls from "./ImageAdvancedControls.svelte";
+    import SketchReferences from "./SketchReferences.svelte";
+    import { onDestroy, tick, untrack } from "svelte";
 
     const {
         sketch,
@@ -42,12 +50,24 @@
     const caps = $derived(capabilitiesFor(chain.modelId));
     const isRoot = $derived(sketch.parentSketchId === null);
     const isRefinement = $derived(!isRoot);
-    const parentImageCount = $derived(
-        isRefinement
-            ? (boardState.sketches.find((s) => s.id === sketch.parentSketchId)
-                  ?.resultImageIds.length ?? 1)
-            : 0
+    const parentImageIds = $derived(
+        boardState.sketches.find((s) => s.id === sketch.parentSketchId)
+            ?.resultImageIds ?? []
     );
+    const inputSelection = $derived.by(() => {
+        try {
+            return {
+                count: effectiveInputImages(sketch, parentImageIds).length,
+                error: ""
+            };
+        } catch (cause) {
+            return {
+                count: 0,
+                error: cause instanceof Error ? cause.message : String(cause)
+            };
+        }
+    });
+    const parentImageCount = $derived(inputSelection.count);
     const isNonConversational = $derived(caps ? !caps.conversational : false);
 
     const hasStyleDoc = $derived(!!boardState.board?.settings.styleDoc?.trim());
@@ -57,11 +77,29 @@
     );
 
     // Image display
-    let imageUrls = $state<string[]>([]);
     let lightboxIndex = $state(0);
     let lightboxOpen = $state(false);
     let showErrorRaw = $state(false);
     let copyStatus = $state("");
+    let generateError = $state("");
+    const inputCount = $derived(
+        parentImageCount +
+            (sketch.attach.styleRef && hasStyleRef ? 1 : 0) +
+            (sketch.attach.layoutRef && hasLayoutRef ? 1 : 0)
+    );
+    const unknownEstimate = $derived(
+        caps
+            ? estimateCost(caps, inputCount, sketch.outputCount ?? 1) === null
+            : true
+    );
+    const hasCostCap = $derived(
+        chain.chainCostCapUsd !== null ||
+            boardState.board?.settings.sessionCostCapUsd != null
+    );
+    $effect(() => {
+        if (caps && isGptImage26(chain.modelId))
+            untrack(() => void loadImageEndpoints(chain.modelId));
+    });
 
     $effect(() => {
         if (sketch.status !== "error") showErrorRaw = false;
@@ -101,36 +139,6 @@
     );
     const intrinsicSize = $derived(imageDimensions(displayAspectRatio));
 
-    $effect(() => {
-        const imageIds = [...sketch.resultImageIds];
-        let cancelled = false;
-        void Promise.all(
-            imageIds.map(async (id) => {
-                const img = await getStoredImage(id);
-                return img ? createObjectUrl(img.blob) : null;
-            })
-        ).then((next) => {
-            const nextUrls = next.filter((url): url is string => url !== null);
-            if (cancelled) {
-                nextUrls.forEach(revokeObjectUrl);
-                return;
-            }
-            imageUrls.forEach(revokeObjectUrl);
-            imageUrls = nextUrls;
-            lightboxIndex = Math.min(
-                lightboxIndex,
-                Math.max(0, nextUrls.length - 1)
-            );
-        });
-        return () => {
-            cancelled = true;
-        };
-    });
-
-    onDestroy(() => {
-        imageUrls.forEach(revokeObjectUrl);
-    });
-
     // Pending trash state
     const isPendingTrash = $derived(
         pendingTrashFrom !== null && sketch.order >= pendingTrashFrom
@@ -138,27 +146,124 @@
 
     // Prompt editing (draft cards only)
     let localPrompt = $state("");
+    let randomizing = $state(false);
+    let randomStatus = $state("");
+    let randomError = $state("");
+    let randomErrorRaw = $state<string | null>(null);
+    let randomBudgetAcknowledged = $state(false);
+    let randomButton = $state<HTMLButtonElement>();
+    let cancelRandomButton = $state<HTMLButtonElement>();
+    let randomBudgetCheckbox = $state<HTMLInputElement>();
+    let randomController: AbortController | undefined;
+    let destroyed = false;
+    const sessionCap = $derived(
+        boardState.board?.settings.sessionCostCapUsd ?? null
+    );
+    const randomCapReached = $derived(
+        sessionCap !== null && getSessionBudgetUsed() >= sessionCap
+    );
     $effect(() => {
         localPrompt = sketch.prompt;
     });
 
     let debounceTimer: ReturnType<typeof setTimeout>;
     function onPromptInput() {
+        randomStatus = "";
+        randomError = "";
+        randomErrorRaw = null;
+        generateError = "";
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            void updateSketch(sketch.id, { prompt: localPrompt });
+            void flushPrompt().catch((cause: unknown) => {
+                generateError = humanizeError(cause);
+            });
         }, 300);
     }
 
-    function generate() {
-        void updateSketch(sketch.id, { prompt: localPrompt });
-        submitSketch(sketch.id);
+    async function flushPrompt() {
+        clearTimeout(debounceTimer);
+        await updateSketch(sketch.id, { prompt: localPrompt });
     }
+
+    async function randomizePrompt() {
+        if (randomizing || randomTextGeneration.inProgress) return;
+        randomStatus = "";
+        randomError = "";
+        randomErrorRaw = null;
+        generateError = "";
+        randomizing = true;
+        randomController = new AbortController();
+        clearTimeout(debounceTimer);
+        await tick();
+        cancelRandomButton?.focus();
+        try {
+            await flushPrompt();
+            const result = await generateRandomSketchPrompt(sketch.id, {
+                signal: randomController.signal,
+                budgetAcknowledged: randomBudgetAcknowledged
+            });
+            randomStatus =
+                result.costUsd === null
+                    ? "Random prompt saved. Cost unavailable; the session total may be incomplete."
+                    : `Random prompt saved. Text-generation cost: ${formatUsd(result.costUsd)}.`;
+        } catch (cause) {
+            if (cause instanceof DOMException && cause.name === "AbortError") {
+                randomStatus =
+                    "Random generation cancelled. Your prompt is unchanged. OpenRouter may still charge for processed tokens.";
+            } else {
+                randomError = humanizeError(cause);
+                randomErrorRaw = rawErrorDetails(cause);
+            }
+        } finally {
+            const restoreFocus =
+                !destroyed && document.activeElement === cancelRandomButton;
+            randomizing = false;
+            randomBudgetAcknowledged = false;
+            randomController = undefined;
+            if (restoreFocus) {
+                await tick();
+                if (randomButton && !randomButton.disabled) {
+                    randomButton.focus();
+                } else if (
+                    randomBudgetCheckbox &&
+                    !randomBudgetCheckbox.disabled
+                ) {
+                    randomBudgetCheckbox.focus();
+                } else {
+                    document.getElementById(`prompt-${sketch.id}`)?.focus();
+                }
+            }
+        }
+    }
+
+    async function generate() {
+        if (randomizing) return;
+        generateError = "";
+        try {
+            await flushPrompt();
+            submitSketch(sketch.id);
+        } catch (cause) {
+            generateError =
+                cause instanceof Error ? cause.message : String(cause);
+        }
+    }
+    onDestroy(() => {
+        destroyed = true;
+        clearTimeout(debounceTimer);
+        randomController?.abort();
+    });
 
     const canGenerate = $derived(
         localPrompt.trim().length > 0 &&
+            !randomizing &&
             (sketch.status === "draft" || sketch.status === "error") &&
-            !!caps
+            !!caps &&
+            !inputSelection.error &&
+            (!isGptImage26(chain.modelId) ||
+                (!!caps.advanced.endpoint &&
+                    !caps.advanced.pending &&
+                    !caps.advanced.error)) &&
+            (!unknownEstimate || !hasCostCap || !!sketch.budgetAcknowledged)
     );
 
     // Deterministic note rotation from sketch id (stable, no Math.random)
@@ -231,19 +336,98 @@
     <!-- Prompt area — three distinct states -->
     {#if sketch.status === "draft" || sketch.status === "error"}
         <!-- Editable draft -->
-        <label for="prompt-{sketch.id}" class="sr-only">
-            {isRefinement ? "Refinement prompt" : "Generation prompt"}
-        </label>
+        <div class="prompt-actions">
+            <label for="prompt-{sketch.id}">
+                {isRefinement ? "Refinement prompt" : "Generation prompt"}
+            </label>
+            <button
+                bind:this={randomButton}
+                class="btn-ghost prompt-random-btn"
+                type="button"
+                onclick={randomizePrompt}
+                aria-label="Random prompt for this sketch"
+                aria-describedby="sketch-random-hint-{sketch.id}"
+                title="Replace this prompt using DeepSeek Flash via OpenRouter (uses API credits)"
+                disabled={randomizing ||
+                    randomTextGeneration.inProgress ||
+                    !auth.apiKey ||
+                    isPendingTrash ||
+                    randomCapReached ||
+                    (sessionCap !== null && !randomBudgetAcknowledged)}
+                >Random</button
+            >
+            {#if randomizing}
+                <button
+                    bind:this={cancelRandomButton}
+                    class="btn-ghost prompt-random-btn"
+                    type="button"
+                    onclick={() => randomController?.abort()}
+                    aria-label="Cancel random sketch prompt generation"
+                    >Cancel</button
+                >
+            {/if}
+        </div>
         <textarea
             id="prompt-{sketch.id}"
             bind:value={localPrompt}
             oninput={onPromptInput}
             rows={3}
+            disabled={randomizing}
             placeholder={isRefinement
                 ? "Describe what to change…"
                 : "Describe what to generate…"}
             class="prompt-textarea"></textarea>
+        <details class="prompt-random-hint">
+            <summary id="sketch-random-hint-{sketch.id}">
+                Random uses API credits
+            </summary>
+            <p>
+                Replaces this prompt using DeepSeek Flash via OpenRouter, not
+                the row's image model. Existing prompts and reference images are
+                not sent.
+            </p>
+        </details>
+        {#if !auth.apiKey}
+            <p class="prompt-random-hint">Connect an API key to use Random.</p>
+        {:else if randomCapReached}
+            <p class="prompt-random-hint">The session cost cap is reached.</p>
+        {:else if randomTextGeneration.inProgress && !randomizing}
+            <p class="prompt-random-hint">Another Random request is running.</p>
+        {/if}
+        {#if sessionCap !== null && !randomCapReached}
+            <label class="random-budget-acknowledgment">
+                <input
+                    bind:this={randomBudgetCheckbox}
+                    type="checkbox"
+                    bind:checked={randomBudgetAcknowledged}
+                    disabled={randomizing || randomTextGeneration.inProgress}
+                />
+                I understand Random cannot be pre-estimated and may exceed this local
+                cap.
+            </label>
+        {/if}
+        {#if randomizing}
+            <p class="prompt-random-hint" role="status">
+                Generating a random prompt...
+            </p>
+        {/if}
+        {#if randomStatus}
+            <p class="prompt-random-hint" role="status">{randomStatus}</p>
+        {/if}
+        {#if randomError}<p class="error-msg" role="alert">
+                {randomError}
+            </p>{/if}
+        {#if randomErrorRaw}
+            <details class="source-panel">
+                <summary>Raw Random API response</summary>
+                <pre class="source-pre">{randomErrorRaw}</pre>
+            </details>
+        {/if}
 
+        <SketchReferences {sketch} capabilities={caps} {parentImageIds} />
+        {#if inputSelection.error}<p class="error-msg" role="alert">
+                {inputSelection.error}
+            </p>{/if}
         <AttachmentChecks
             attach={sketch.attach}
             capabilities={caps}
@@ -254,6 +438,13 @@
             {parentImageCount}
             onChange={(flags) =>
                 void updateSketch(sketch.id, { attach: flags })}
+        />
+        <ImageAdvancedControls
+            {sketch}
+            capabilities={caps}
+            {hasCostCap}
+            {unknownEstimate}
+            onChange={(updates) => updateSketch(sketch.id, updates)}
         />
         <ResolutionControls
             aspectRatio={sketch.aspectRatio}
@@ -311,18 +502,19 @@
     {/if}
 
     <!-- Result image -->
-    {#if imageUrls.length > 0}
-        <div class="result-gallery" aria-label="Generated images">
-            {#each imageUrls as url, index (url)}
+    {#if sketch.resultImageIds.length > 0}
+        <div
+            class="result-gallery"
+            class:single={sketch.resultImageIds.length === 1}
+            aria-label="Generated images"
+        >
+            {#each sketch.resultImageIds as imageId, index (imageId)}
                 <div class="result-image">
-                    <img
-                        src={url}
-                        alt={imageUrls.length > 1
-                            ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${index + 1} of ${imageUrls.length})`
+                    <MediaPreview
+                        {imageId}
+                        alt={sketch.resultImageIds.length > 1
+                            ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${index + 1} of ${sketch.resultImageIds.length})`
                             : sketch.prompt.slice(0, 120) || "Generated image"}
-                        width={intrinsicSize.width}
-                        height={intrinsicSize.height}
-                        class="result-img"
                     />
                     <button
                         class="zoom-btn"
@@ -361,20 +553,49 @@
             {/each}
         </div>
         <Lightbox
-            src={imageUrls[lightboxIndex]}
-            alt={imageUrls.length > 1
-                ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${lightboxIndex + 1} of ${imageUrls.length})`
+            imageId={sketch.resultImageIds[lightboxIndex] ??
+                sketch.resultImageIds[0]!}
+            alt={sketch.resultImageIds.length > 1
+                ? `${sketch.prompt.slice(0, 100) || "Generated image"} (output ${lightboxIndex + 1} of ${sketch.resultImageIds.length})`
                 : sketch.prompt.slice(0, 120) || "Generated image"}
-            width={intrinsicSize.width}
-            height={intrinsicSize.height}
             open={lightboxOpen}
             onClose={() => (lightboxOpen = false)}
         />
+        <p class="cost-estimate">
+            {sketch.resultImageIds.length} output{sketch.resultImageIds
+                .length === 1
+                ? ""
+                : "s"} received.
+        </p>
+        {#if sketch.resultMetadata?.quality || sketch.resultMetadata?.background}
+            <p class="cost-estimate">
+                Provider settings: {sketch.resultMetadata.quality ??
+                    "quality not reported"}; {sketch.resultMetadata
+                    .background ?? "background not reported"}.
+            </p>
+        {/if}
     {/if}
+    {#if sketch.resultWarning}<Admonition type="warning"
+            >{sketch.resultWarning}</Admonition
+        >{/if}
+    {#if sketch.costUnreported}
+        <Admonition type="warning">
+            At least one generation attempt may have unreported charges. Totals
+            include only known amounts; check OpenRouter for the full cost.
+        </Admonition>
+    {/if}
+    {#if generateError}<p class="error-msg" role="alert">
+            {generateError}
+        </p>{/if}
 
     <!-- Error message -->
     {#if sketch.status === "error" && sketch.error}
         <p class="error-msg" role="alert">{sketch.error}</p>
+        {#if sketch.costActualUsd !== null}
+            <p class="cost-estimate">
+                Known charges: {formatUsd(sketch.costActualUsd)}.
+            </p>
+        {/if}
         {#if sketch.errorRaw}
             <button
                 class="btn-ghost raw-toggle-btn"
@@ -421,6 +642,7 @@
     <CardActions
         {sketch}
         {chain}
+        busy={randomizing}
         pendingTrash={isPendingTrash}
         {pendingTrashCount}
         onTrashClick={() => onTrashClick(sketch.order)}
@@ -516,6 +738,44 @@
     }
 
     /* Prompt */
+    .prompt-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-wrap: wrap;
+        font-size: 0.8125rem;
+    }
+    .prompt-actions label {
+        flex: 1;
+        font-weight: 600;
+    }
+    .prompt-random-btn {
+        min-height: 24px;
+        padding: 2px 6px;
+        font-size: 0.75rem;
+    }
+    .prompt-random-btn:focus-visible,
+    .random-budget-acknowledgment input:focus-visible,
+    .prompt-random-hint summary:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 2px;
+        box-shadow: none;
+    }
+    .prompt-random-hint {
+        font-size: 0.75rem;
+        color: var(--clr-text);
+        overflow-wrap: anywhere;
+    }
+    .random-budget-acknowledgment {
+        display: flex;
+        align-items: start;
+        gap: 6px;
+        font-size: 0.75rem;
+    }
+    .random-budget-acknowledgment input {
+        width: auto;
+        flex-shrink: 0;
+    }
     .prompt-textarea {
         width: 100%;
         min-height: 72px;
@@ -581,16 +841,13 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
     }
-    .result-img {
-        width: 100%;
-        height: auto;
-        display: block;
+    .result-gallery.single {
+        grid-template-columns: minmax(0, 1fr);
     }
     /* Cost chip overlaid on image */
     .cost-chip {
-        position: absolute;
-        bottom: 6px;
-        right: 6px;
+        display: inline-block;
+        margin: 4px;
         background: rgba(0, 0, 0, 0.55);
         color: var(--clr-on-overlay);
         font-size: 0.6875rem;

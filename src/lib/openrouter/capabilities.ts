@@ -2,6 +2,8 @@ import type {
   RawModel,
   ModelCapabilities,
   ImageModelDiscoveryEntry,
+  ImageModelEndpoint,
+  AdvancedImageCapabilities,
   ParameterDescriptor
 } from "./types";
 
@@ -39,6 +41,45 @@ const CHAT_COMPLETIONS_IMAGE_SIZES = ["1K", "2K", "4K"];
 // The Image API has no reasoning parameter, so the effort control applies
 // only when one of these models is served through /chat/completions.
 const REASONING_EFFORT_MODELS = new Set(["openai/gpt-5.4-image-2"]);
+
+export function isGptImage26(modelId: string): boolean {
+  return /^openai\/gpt-image-2\.6-(sunburst|flare)(?:-|$)/.test(modelId);
+}
+
+export function advancedCapabilities(
+  endpoint: ImageModelEndpoint | null = null
+): AdvancedImageCapabilities {
+  const params = endpoint?.supported_parameters;
+  const allowed = endpoint?.allowed_passthrough_parameters ?? [];
+  function range(key: string, min: number, max: number) {
+    const descriptor = params?.[key];
+    if (descriptor?.type !== "range") return null;
+    const result = {
+      min: Math.max(min, descriptor.min),
+      max: Math.min(max, descriptor.max)
+    };
+    if (
+      result.min > result.max ||
+      !Number.isInteger(result.min) ||
+      !Number.isInteger(result.max)
+    ) {
+      throw new Error(`OpenRouter returned incompatible ${key} limits.`);
+    }
+    return result;
+  }
+  return {
+    endpoint,
+    complexity: allowed.includes("complexity"),
+    moderation: allowed.includes("moderation"),
+    customSize: params?.size?.type === "boolean",
+    markup: params?.markup !== undefined,
+    partialImages: range("partial_images", 0, 3),
+    frameCount: range("frame_count", 2, 16),
+    frameDurationMs: range("frame_duration_ms", 20, 2000),
+    pending: false,
+    error: null
+  };
+}
 
 function enumValues(desc: ParameterDescriptor | undefined): string[] | null {
   return desc?.type === "enum" ? desc.values : null;
@@ -135,7 +176,8 @@ export function resolveCapabilities(
     // carry partial previews (see imageGenerationStream() in client.ts).
     supportsStreaming: discovery?.supports_streaming ?? false,
     estimated: discovery === undefined,
-    pricing: model.pricing
+    pricing: model.pricing,
+    advanced: advancedCapabilities()
   };
 }
 

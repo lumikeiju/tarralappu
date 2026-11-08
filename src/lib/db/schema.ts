@@ -1,4 +1,9 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import type {
+  AdvancedImageOptions,
+  ImageGenerationRequest,
+  CompletionResponse
+} from "../openrouter/types";
 
 export type ID = string;
 
@@ -19,6 +24,7 @@ export interface BoardSettings {
   defaultImageSize: string;
   promptNotes: PromptNote[];
   pinnedModelIds: string[];
+  defaultModelPinsApplied?: boolean;
 }
 
 export interface Board {
@@ -26,6 +32,10 @@ export interface Board {
   name: string;
   createdAt: number;
   settings: BoardSettings;
+  styleGuideCostUsd?: number;
+  styleGuideUnreportedCosts?: number;
+  randomPromptCostUsd?: number;
+  randomPromptUnreportedCosts?: number;
 }
 
 export interface Chain {
@@ -74,8 +84,12 @@ export interface SketchRequestSnapshot {
     seed?: number;
     stream: boolean;
     imageRefs: ID[];
-  };
-  reasoning?: { effort: "low" | "medium" | "high" };
+    markupImageId?: ID;
+  } & Pick<
+    ImageGenerationRequest,
+    "size" | "frame_count" | "frame_duration_ms" | "partial_images" | "provider"
+  >;
+  reasoning?: { effort: "none" | "low" | "medium" | "high" };
   /** Legacy (pre-v1.12.3) snapshots recorded reasoning under this unsupported field. */
   provider?: { reasoning_effort?: "low" | "medium" | "high" };
   stream: boolean;
@@ -106,18 +120,28 @@ export interface Sketch {
   /** Request partial-preview streaming (`stream: true`) — only offered for models with `ModelCapabilities.supportsStreaming`. */
   streamEnabled: boolean;
   reasoningEffort: "low" | "medium" | "high" | null;
+  imageOptions?: AdvancedImageOptions;
+  referenceImageIds?: ID[];
+  editSourceImageId?: ID | null;
+  markup?: { imageId: ID; baseImageId: ID };
+  budgetAcknowledged?: boolean;
+  generationId?: string;
+  resultMetadata?: CompletionResponse["imageMetadata"];
+  resultWarning?: string | null;
   status: SketchStatus;
   error: string | null;
   /** Raw API error response (pretty-printed JSON), for the "view raw response" debug affordance. Null for local/synthetic errors with no API response. */
   errorRaw: string | null;
   costEstimateUsd: number | null;
   costActualUsd: number | null;
+  costUnreported?: boolean;
   resultImageIds: ID[];
   requestSnapshot: SketchRequestSnapshot | null;
   createdAt: number;
 }
 
-export type ImageRole = "generated" | "styleRef" | "layoutRef";
+export type ImageRole =
+  "generated" | "styleRef" | "layoutRef" | "reference" | "markup";
 
 export interface StoredImage {
   id: ID;
@@ -126,6 +150,13 @@ export interface StoredImage {
   mime: string;
   refCount: number;
   createdAt: number;
+  width?: number;
+  height?: number;
+  frameCount?: number;
+  durationMs?: number;
+  poster?: Blob;
+  derivedFromImageId?: ID;
+  description?: string;
 }
 
 export interface AppSettings {
@@ -187,6 +218,10 @@ export async function getDB(): Promise<IDBPDatabase<TarralappuDB>> {
 }
 
 export const DEFAULT_BOARD_ID = "default";
+export const DEFAULT_PINNED_MODEL_IDS: readonly string[] = [
+  "openai/gpt-image-2.6-sunburst",
+  "openai/gpt-image-2.6-flare"
+];
 
 export function defaultBoardSettings(): BoardSettings {
   return {
@@ -198,7 +233,8 @@ export function defaultBoardSettings(): BoardSettings {
     defaultAspectRatio: "1:1",
     defaultImageSize: "1K",
     promptNotes: [],
-    pinnedModelIds: []
+    pinnedModelIds: [...DEFAULT_PINNED_MODEL_IDS],
+    defaultModelPinsApplied: true
   };
 }
 

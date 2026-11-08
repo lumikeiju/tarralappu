@@ -1,16 +1,13 @@
 <script lang="ts">
+    import MediaPreview from "./MediaPreview.svelte";
     const {
-        src,
+        imageId,
         alt,
-        width,
-        height,
         open,
         onClose
     }: {
-        src: string;
+        imageId: string;
         alt: string;
-        width: number;
-        height: number;
         open: boolean;
         onClose: () => void;
     } = $props();
@@ -42,6 +39,10 @@
     bind:this={dialogEl}
     class="lightbox"
     aria-label="Image viewer"
+    oncancel={(event) => {
+        event.preventDefault();
+        onClose();
+    }}
     onclose={onNativeClose}
 >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -66,7 +67,17 @@
                 <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
         </button>
-        <img class="lightbox__img" {src} {alt} {width} {height} />
+        {#if open}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div
+                class="lightbox__media"
+                role="region"
+                aria-label="Generated image and controls"
+                tabindex="0"
+            >
+                <MediaPreview {imageId} {alt} />
+            </div>
+        {/if}
     </div>
 </dialog>
 
@@ -109,20 +120,28 @@
         }
     }
 
-    .lightbox__img {
+    .lightbox__media {
         max-width: 92vw;
         max-height: 92vh;
-        width: auto;
-        height: auto;
-        object-fit: contain;
+        width: min(92vw, 1200px);
+        overflow: auto;
+        background: var(--clr-surface);
+        color: var(--clr-text);
         display: block;
         border: 4px solid rgba(255, 255, 255, 0.9);
         box-shadow: 0 4px 32px rgba(0, 0, 0, 0.6);
         border-radius: 3px;
     }
+    .lightbox__media:focus-visible {
+        outline: 2px solid var(--clr-accent);
+    }
+    .lightbox__media :global(img) {
+        max-height: 75vh;
+        width: auto;
+    }
 
     @media (prefers-reduced-motion: no-preference) {
-        .lightbox__img {
+        .lightbox__media {
             animation: lightbox-img-in 0.15s ease;
         }
 

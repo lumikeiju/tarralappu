@@ -84,7 +84,7 @@
                 <NotePanel color="green">
                     <ReferenceImages />
                 </NotePanel>
-                <NotePanel color="blue">
+                <NotePanel color="blue" class="session-cap-panel">
                     <SessionCapPanel />
                 </NotePanel>
             </div>
@@ -189,10 +189,16 @@
     }
     .authoring-body {
         display: grid;
-        grid-template-columns: 1fr 1fr auto;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(
+                160px,
+                0.55fr
+            );
         gap: 20px;
         padding: 20px 20px 24px;
         align-items: start;
+    }
+    .authoring-body :global(.session-cap-panel) {
+        padding: 10px 12px;
     }
     @media (max-width: 700px) {
         .authoring-body {

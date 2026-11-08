@@ -6,7 +6,11 @@
     } from "../lib/state/board.svelte";
     import type { ModelCapabilities } from "../lib/openrouter/types";
     import { formatModelPricing, pricingTier } from "../lib/openrouter/cost";
-    import { groupModelsByCreator } from "../lib/openrouter/modelGroups";
+    import {
+        groupModelsByCreator,
+        isSelectedModelOption,
+        type ModelPickerSection
+    } from "../lib/openrouter/modelGroups";
 
     const {
         value,
@@ -20,6 +24,17 @@
     const groupName = `model-picker-${uid}`;
 
     let filter = $state("");
+    let selectedSection = $state<ModelPickerSection>("pinned");
+
+    function selectModel(id: string, section: ModelPickerSection) {
+        selectedSection = section;
+        onSelect(id);
+    }
+
+    function toggleModelPin(id: string) {
+        if (value === id && isPinned(id)) selectedSection = "catalog";
+        void togglePinnedModel(id);
+    }
 
     function label(m: ModelCapabilities): string {
         return m.estimated ? `${m.name} (capabilities estimated)` : m.name;
@@ -99,9 +114,15 @@
                                 type="radio"
                                 name={groupName}
                                 value={m.id}
-                                checked={value === m.id}
+                                checked={isSelectedModelOption(
+                                    m.id,
+                                    value,
+                                    "pinned",
+                                    selectedSection,
+                                    true
+                                )}
                                 disabled={boardState.modelsLoading}
-                                onchange={() => onSelect(m.id)}
+                                onchange={() => selectModel(m.id, "pinned")}
                             />
                             <span class="model-name" title={m.id}
                                 >{label(m)}</span
@@ -128,7 +149,7 @@
                             aria-label="Pin {m.name}"
                             title="Unpin model"
                             disabled={boardState.modelsLoading}
-                            onclick={() => void togglePinnedModel(m.id)}
+                            onclick={() => toggleModelPin(m.id)}
                         >
                             <span aria-hidden="true">★</span>
                         </button>
@@ -153,9 +174,15 @@
                                 type="radio"
                                 name={groupName}
                                 value={m.id}
-                                checked={value === m.id}
+                                checked={isSelectedModelOption(
+                                    m.id,
+                                    value,
+                                    "catalog",
+                                    selectedSection,
+                                    isPinned(m.id)
+                                )}
                                 disabled={boardState.modelsLoading}
-                                onchange={() => onSelect(m.id)}
+                                onchange={() => selectModel(m.id, "catalog")}
                             />
                             <span class="model-name" title={m.id}
                                 >{label(m)}</span
@@ -182,7 +209,7 @@
                             aria-label="Pin {m.name}"
                             title={isPinned(m.id) ? "Unpin model" : "Pin model"}
                             disabled={boardState.modelsLoading}
-                            onclick={() => void togglePinnedModel(m.id)}
+                            onclick={() => toggleModelPin(m.id)}
                         >
                             <span aria-hidden="true"
                                 >{isPinned(m.id) ? "★" : "☆"}</span

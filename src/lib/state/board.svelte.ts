@@ -10,13 +10,18 @@ import {
 } from "../db/repo";
 import {
   decrementRefCountAndMaybeDelete,
-  incrementRefCount,
   storeImageBlob,
-  getStoredImage,
+  getDisplayImage,
+  validateImageFile,
   blobToBase64,
   dataUrlToBlob
 } from "../db/images";
-import { DEFAULT_BOARD_ID, defaultBoardSettings } from "../db/schema";
+import {
+  DEFAULT_BOARD_ID,
+  DEFAULT_PINNED_MODEL_IDS,
+  defaultBoardSettings,
+  getDB
+} from "../db/schema";
 import type {
   Board,
   Chain,
@@ -25,27 +30,58 @@ import type {
   AttachFlags,
   ID,
   PromptNote,
-  SketchStatus
+  SketchStatus,
+  SketchRequestSnapshot
 } from "../db/schema";
 import { newId } from "../util/id";
 import {
   listImageModels,
   listImageModelCapabilities
 } from "../openrouter/client";
-import { resolveAllCapabilities } from "../openrouter/capabilities";
+import {
+  resolveAllCapabilities,
+  resolveCapabilities,
+  advancedCapabilities,
+  isGptImage26
+} from "../openrouter/capabilities";
 import type { ModelCapabilities } from "../openrouter/types";
 import {
   chatCompletion,
   chatCompletionStream,
   imageGeneration,
   imageGenerationStream,
+  ImageResponseError,
+  OpenRouterApiError,
   humanizeError,
   rawErrorDetails,
-  fetchGenerationCost
+  fetchGenerationCost,
+  listImageModelEndpoints
 } from "../openrouter/client";
-import type { ImageGenerationRequest } from "../openrouter/types";
+import type {
+  CompletionResponse,
+  CompletionUsage,
+  ImageGenerationRequest
+} from "../openrouter/types";
 import { composeRequest } from "../openrouter/compose";
-import { estimateCost, parseCostFromResponse } from "../openrouter/cost";
+import {
+  addKnownCost,
+  estimateCost,
+  parseCostFromUsage
+} from "../openrouter/cost";
+import {
+  requestRandomStyleGuide,
+  completedStyleGuide
+} from "../openrouter/styleGuide";
+import {
+  requestRandomPrompt,
+  completedRandomPrompt
+} from "../openrouter/randomPrompt";
+import {
+  copyGenerationSettings,
+  copyRefinementSettings,
+  ownedInputImages
+} from "../openrouter/options";
+import { rasterizeImage, validateMarkup } from "../db/media";
 import { Queue } from "../queue/queue";
 import { settings, auth } from "./settings.svelte";
 
@@ -65,6 +101,64 @@ export const boardState = $state({
 // as soon as the job finishes (success or error), since the final images end
 // up in `Sketch.resultImageIds` via IndexedDB like any other generation.
 export const streamingPreviews = $state<Record<ID, string[]>>({});
+const costReservations = $state<Record<ID, number>>({});
+export const randomTextGeneration = $state({ inProgress: false });
+const endpointLoads = new Map<string, Promise<void>>();
+
+export function loadImageEndpoints(
+  modelId: string,
+  refresh = false
+): Promise<void> {
+  if (!isGptImage26(modelId)) return Promise.resolve();
+  const existing = endpointLoads.get(modelId);
+  if (existing && !refresh) return existing;
+  const caps = capabilitiesFor(modelId);
+  if (!caps) return Promise.resolve();
+  caps.advanced = { ...caps.advanced, pending: true, error: null };
+  const load = (async () => {
+    try {
+      const response = await listImageModelEndpoints(modelId);
+      const endpoint = response.endpoints.find(
+        (item) => item.provider_slug === "openai"
+      );
+      if (!endpoint)
+        throw new Error("No eligible OpenAI image endpoint is available.");
+      const resolved = resolveCapabilities(
+        {
+          id: caps.id,
+          name: caps.name,
+          pricing: caps.pricing,
+          architecture: {
+            input_modalities: ["text", "image"],
+            output_modalities: caps.outputModalities
+          }
+        },
+        {
+          id: caps.id,
+          name: caps.name,
+          architecture: {
+            input_modalities: ["text", "image"],
+            output_modalities: caps.outputModalities
+          },
+          supported_parameters: endpoint.supported_parameters,
+          supports_streaming: endpoint.supports_streaming,
+          endpoints: ""
+        }
+      );
+      Object.assign(caps, resolved, {
+        advanced: advancedCapabilities(endpoint)
+      });
+    } catch (error) {
+      caps.advanced = {
+        ...caps.advanced,
+        pending: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  })();
+  endpointLoads.set(modelId, load);
+  return load;
+}
 
 // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -93,9 +187,17 @@ export function capabilitiesFor(
 }
 
 export function getSessionCostTotal(): number {
-  return boardState.sketches.reduce(
-    (sum, s) => sum + (s.costActualUsd ?? 0),
-    0
+  return (
+    (boardState.board?.styleGuideCostUsd ?? 0) +
+    (boardState.board?.randomPromptCostUsd ?? 0) +
+    boardState.sketches.reduce((sum, s) => sum + (s.costActualUsd ?? 0), 0)
+  );
+}
+
+export function getSessionBudgetUsed(): number {
+  return (
+    getSessionCostTotal() +
+    Object.values(costReservations).reduce((sum, cost) => sum + cost, 0)
   );
 }
 
@@ -130,6 +232,15 @@ export async function initBoard(): Promise<void> {
       settings: defaultBoardSettings()
     };
     await saveBoard(board);
+  } else if (!board.settings.defaultModelPinsApplied) {
+    board.settings.pinnedModelIds = [
+      ...new Set([
+        ...(board.settings.pinnedModelIds ?? []),
+        ...DEFAULT_PINNED_MODEL_IDS
+      ])
+    ];
+    board.settings.defaultModelPinsApplied = true;
+    await saveBoard(board);
   }
   boardState.board = board;
 
@@ -147,11 +258,13 @@ export async function initBoard(): Promise<void> {
     (sketch) => sketch.status === "queued" || sketch.status === "generating"
   );
   for (const sketch of interrupted) {
+    const mayHaveUnreportedCost = sketch.status === "generating";
     Object.assign(sketch, {
       status: "error",
       error:
         "Interrupted — the page was closed or reloaded before generation finished.",
-      errorRaw: null
+      errorRaw: null,
+      ...(mayHaveUnreportedCost ? { costUnreported: true } : {})
     });
   }
   await Promise.all(interrupted.map(saveSketch));
@@ -175,6 +288,7 @@ export async function loadAvailableModels(): Promise<void> {
       res.data,
       discovery.data
     );
+    endpointLoads.clear();
   } catch (e) {
     boardState.modelsError = e instanceof Error ? e.message : String(e);
   } finally {
@@ -190,6 +304,202 @@ export async function updateBoardSettings(
   if (!boardState.board) return;
   Object.assign(boardState.board.settings, updates);
   await saveBoard(JSON.parse(JSON.stringify(boardState.board)));
+}
+
+type RandomTextOptions = {
+  signal?: AbortSignal;
+  budgetAcknowledged?: boolean;
+};
+
+async function resolveAttemptCost(
+  usage: CompletionUsage | undefined,
+  generationId: string,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<number | null> {
+  const cost = parseCostFromUsage(usage);
+  return cost === null && generationId
+    ? fetchGenerationCost(generationId, apiKey, signal)
+    : cost;
+}
+
+async function generateRandomText(
+  target:
+    | { kind: "styleGuide" }
+    | { kind: "prompt"; noteId: ID }
+    | { kind: "sketch"; sketchId: ID },
+  options: RandomTextOptions
+): Promise<{ costUsd: number | null }> {
+  const board = boardState.board;
+  const apiKey = auth.apiKey;
+  if (!board) throw new Error("The board is not loaded.");
+  if (!apiKey) throw new Error("Connect an OpenRouter API key to use Random.");
+  if (
+    target.kind === "prompt" &&
+    !board.settings.promptNotes?.some((note) => note.id === target.noteId)
+  ) {
+    throw new Error("The prompt note no longer exists.");
+  }
+  const targetSketch =
+    target.kind === "sketch"
+      ? boardState.sketches.find((sketch) => sketch.id === target.sketchId)
+      : undefined;
+  if (
+    target.kind === "sketch" &&
+    (!targetSketch ||
+      (targetSketch.status !== "draft" && targetSketch.status !== "error"))
+  ) {
+    throw new Error("Random requires an editable draft or errored sketch.");
+  }
+  const originalPrompt = targetSketch?.prompt;
+  if (randomTextGeneration.inProgress)
+    throw new Error("Another Random text request is already running.");
+  options.signal?.throwIfAborted();
+  const cap = board.settings.sessionCostCapUsd;
+  if (cap !== null && getSessionBudgetUsed() >= cap) {
+    throw new Error(
+      "The session cap is reached, including in-flight estimates. Increase it before using Random."
+    );
+  }
+  if (cap !== null && !options.budgetAcknowledged) {
+    throw new Error(
+      "Random has no reliable pre-send estimate. Acknowledge the budget limitation before generating."
+    );
+  }
+  const costKey =
+    target.kind === "styleGuide" ? "styleGuideCostUsd" : "randomPromptCostUsd";
+  const unknownCostKey =
+    target.kind === "styleGuide"
+      ? "styleGuideUnreportedCosts"
+      : "randomPromptUnreportedCosts";
+  randomTextGeneration.inProgress = true;
+  let costRecorded = false;
+  async function recordRandomCost(
+    response: Pick<CompletionResponse, "id" | "usage">,
+    currentBoard: Board,
+    credential: string
+  ): Promise<number | null> {
+    const costUsd = await resolveAttemptCost(
+      response.usage,
+      response.id,
+      credential,
+      options.signal
+    );
+    if (costUsd === null) {
+      currentBoard[unknownCostKey] = (currentBoard[unknownCostKey] ?? 0) + 1;
+    } else {
+      currentBoard[costKey] = (currentBoard[costKey] ?? 0) + costUsd;
+    }
+    await saveBoard(JSON.parse(JSON.stringify(currentBoard)));
+    costRecorded = true;
+    return costUsd;
+  }
+  try {
+    const response =
+      target.kind === "styleGuide"
+        ? await requestRandomStyleGuide(apiKey, options.signal)
+        : await requestRandomPrompt(
+            apiKey,
+            options.signal,
+            targetSketch?.parentSketchId ? "refinement" : "generation"
+          );
+    const costUsd = await recordRandomCost(response, board, apiKey);
+    options.signal?.throwIfAborted();
+    if (target.kind === "styleGuide") {
+      const styleDoc = completedStyleGuide(response);
+      const previous = board.settings.styleDoc;
+      try {
+        await updateBoardSettings({ styleDoc });
+      } catch (error) {
+        if (board.settings.styleDoc === styleDoc) {
+          board.settings.styleDoc = previous;
+        }
+        throw error;
+      }
+    } else if (target.kind === "sketch") {
+      const prompt = completedRandomPrompt(response);
+      const sketch = boardState.sketches.find(
+        (sketch) => sketch.id === target.sketchId
+      );
+      if (
+        !sketch ||
+        (sketch.status !== "draft" && sketch.status !== "error") ||
+        sketch.prompt !== originalPrompt
+      ) {
+        throw new Error(
+          "The sketch was removed or changed before Random completed. Its prompt was not replaced."
+        );
+      }
+      const previous = {
+        prompt: sketch.prompt,
+        budgetAcknowledged: sketch.budgetAcknowledged
+      };
+      try {
+        await updateSketch(sketch.id, { prompt });
+      } catch (error) {
+        if (sketch.prompt === prompt) Object.assign(sketch, previous);
+        throw error;
+      }
+    } else {
+      const text = completedRandomPrompt(response);
+      const note = board.settings.promptNotes?.find(
+        (note) => note.id === target.noteId
+      );
+      if (!note) {
+        throw new Error(
+          "The prompt note was removed before generation completed."
+        );
+      }
+      const previous = note.text;
+      try {
+        await updatePromptNote(target.noteId, { text });
+      } catch (error) {
+        if (note.text === text) note.text = previous;
+        throw error;
+      }
+    }
+    return { costUsd };
+  } catch (error) {
+    if (!costRecorded && error instanceof OpenRouterApiError && error.inBand) {
+      await recordRandomCost(
+        { id: error.generationId, usage: error.usage },
+        board,
+        apiKey
+      );
+    }
+    if (
+      !costRecorded &&
+      ((error instanceof DOMException && error.name === "AbortError") ||
+        error instanceof TypeError ||
+        error instanceof SyntaxError)
+    ) {
+      board[unknownCostKey] = (board[unknownCostKey] ?? 0) + 1;
+      await saveBoard(JSON.parse(JSON.stringify(board)));
+    }
+    throw error;
+  } finally {
+    randomTextGeneration.inProgress = false;
+  }
+}
+
+export function generateRandomStyleGuide(
+  options: RandomTextOptions = {}
+): Promise<{ costUsd: number | null }> {
+  return generateRandomText({ kind: "styleGuide" }, options);
+}
+
+export function generateRandomPrompt(
+  noteId: ID,
+  options: RandomTextOptions = {}
+): Promise<{ costUsd: number | null }> {
+  return generateRandomText({ kind: "prompt", noteId }, options);
+}
+
+export function generateRandomSketchPrompt(
+  sketchId: ID,
+  options: RandomTextOptions = {}
+): Promise<{ costUsd: number | null }> {
+  return generateRandomText({ kind: "sketch", sketchId }, options);
 }
 
 // ── Prompt board (scratchpad notes) ──────────────────────────────────────────
@@ -309,6 +619,10 @@ export async function createRootSketch(
     seed: null,
     streamEnabled: false,
     reasoningEffort: null,
+    imageOptions: {},
+    referenceImageIds: [],
+    editSourceImageId: null,
+    budgetAcknowledged: false,
     status: "draft",
     error: null,
     errorRaw: null,
@@ -351,16 +665,7 @@ export async function createRefinementSketch(
       styleRef: false,
       layoutRef: false
     },
-    aspectRatio: parent.aspectRatio,
-    imageSize: parent.imageSize,
-    quality: parent.quality,
-    background: parent.background,
-    outputCount: parent.outputCount ?? 1,
-    outputFormat: parent.outputFormat ?? null,
-    outputCompression: parent.outputCompression ?? null,
-    seed: parent.seed ?? null,
-    streamEnabled: parent.streamEnabled,
-    reasoningEffort: parent.reasoningEffort,
+    ...copyRefinementSettings(parent),
     status: "draft",
     error: null,
     errorRaw: null,
@@ -370,7 +675,7 @@ export async function createRefinementSketch(
     requestSnapshot: null,
     createdAt: Date.now()
   };
-  await saveSketch(sketch);
+  await persistSketchesWithImages([sketch]);
   boardState.sketches.push(sketch);
   return sketch;
 }
@@ -383,9 +688,208 @@ export async function updateSketch(
 ): Promise<void> {
   const sketch = boardState.sketches.find((s) => s.id === sketchId);
   if (!sketch) return;
+  const generationKeys: (keyof Sketch)[] = [
+    "prompt",
+    "attach",
+    "aspectRatio",
+    "imageSize",
+    "quality",
+    "background",
+    "outputCount",
+    "outputFormat",
+    "outputCompression",
+    "seed",
+    "streamEnabled",
+    "reasoningEffort",
+    "imageOptions",
+    "referenceImageIds",
+    "editSourceImageId",
+    "markup"
+  ];
+  if (
+    generationKeys.some(
+      (key) =>
+        key in updates &&
+        JSON.stringify(updates[key]) !== JSON.stringify(sketch[key])
+    )
+  ) {
+    sketch.budgetAcknowledged = false;
+  }
   Object.assign(sketch, updates);
   // JSON roundtrip strips Svelte 5 reactive proxies before IDB serialization
   await saveSketch(JSON.parse(JSON.stringify(sketch)));
+}
+
+type SketchReferenceUpdates = Partial<
+  Pick<
+    Sketch,
+    | "referenceImageIds"
+    | "editSourceImageId"
+    | "markup"
+    | "outputFormat"
+    | "imageOptions"
+  >
+>;
+
+export async function updateSketchReferences(
+  sketchId: ID,
+  updates: SketchReferenceUpdates
+): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  const previous = {
+    referenceImageIds: sketch.referenceImageIds?.slice(),
+    editSourceImageId: sketch.editSourceImageId,
+    markup: sketch.markup ? { ...sketch.markup } : undefined,
+    outputFormat: sketch.outputFormat,
+    imageOptions: sketch.imageOptions ? { ...sketch.imageOptions } : undefined
+  };
+  try {
+    await updateSketch(sketchId, updates);
+  } catch (error) {
+    for (const key of [
+      "referenceImageIds",
+      "editSourceImageId",
+      "markup",
+      "outputFormat",
+      "imageOptions"
+    ] as const) {
+      if (
+        key in updates &&
+        JSON.stringify(sketch[key]) === JSON.stringify(updates[key])
+      ) {
+        Object.assign(sketch, { [key]: previous[key] });
+      }
+    }
+    throw error;
+  }
+}
+
+export async function addSketchReference(
+  sketchId: ID,
+  blob: Blob,
+  derivedFromImageId?: ID
+): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  if (blob instanceof File) {
+    const error = validateImageFile(blob);
+    if (error) throw new Error(error);
+  }
+  if (
+    (sketch.referenceImageIds?.length ?? 0) >=
+    (capabilitiesFor(sketch.modelId)?.maxInputImages ?? 0)
+  ) {
+    throw new Error("The reference-image limit is reached.");
+  }
+  const image = await storeImageBlob(blob, "reference");
+  try {
+    if (derivedFromImageId) {
+      image.derivedFromImageId = derivedFromImageId;
+      await (await getDB()).put("images", image);
+    }
+    await updateSketchReferences(sketchId, {
+      referenceImageIds: [...(sketch.referenceImageIds ?? []), image.id],
+      ...(derivedFromImageId
+        ? {
+            editSourceImageId: image.id,
+            outputFormat: "png",
+            imageOptions: {
+              ...sketch.imageOptions,
+              frameCount: null,
+              frameDurationMs: null
+            }
+          }
+        : {})
+    });
+  } catch (error) {
+    await decrementRefCountAndMaybeDelete([image.id]);
+    throw error;
+  }
+}
+
+export async function removeSketchReference(
+  sketchId: ID,
+  imageId: ID
+): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  if (!(sketch.referenceImageIds ?? []).includes(imageId))
+    throw new Error("This reference is not attached to the sketch.");
+  const wasEditSource = sketch.editSourceImageId === imageId;
+  const oldMarkup = wasEditSource ? sketch.markup : undefined;
+  await updateSketchReferences(sketchId, {
+    referenceImageIds: (sketch.referenceImageIds ?? []).filter(
+      (id) => id !== imageId
+    ),
+    ...(wasEditSource ? { editSourceImageId: null, markup: undefined } : {})
+  });
+  await decrementRefCountAndMaybeDelete([
+    imageId,
+    ...(oldMarkup ? [oldMarkup.imageId] : [])
+  ]);
+}
+
+export async function selectEditSource(
+  sketchId: ID,
+  imageId: ID | null
+): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  if (sketch.editSourceImageId === imageId) return;
+  const oldMarkup = sketch.markup;
+  await updateSketchReferences(sketchId, {
+    editSourceImageId: imageId,
+    markup: undefined
+  });
+  if (oldMarkup) await decrementRefCountAndMaybeDelete([oldMarkup.imageId]);
+}
+
+export async function clearMarkup(sketchId: ID): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  const previous = sketch.markup;
+  await updateSketchReferences(sketchId, { markup: undefined });
+  if (previous) await decrementRefCountAndMaybeDelete([previous.imageId]);
+}
+
+export async function attachMarkup(
+  sketchId: ID,
+  baseImageId: ID,
+  blob: Blob
+): Promise<void> {
+  const sketch = getSketchById(sketchId);
+  if (!sketch) throw new Error("Sketch not found.");
+  if (!capabilitiesFor(sketch.modelId)?.advanced.markup)
+    throw new Error(
+      "OpenRouter has not confirmed markup support for this endpoint."
+    );
+  const base = await getDisplayImage(baseImageId);
+  await validateMarkup(blob, base);
+  const markup = await storeImageBlob(blob, "markup");
+  const previous = sketch.markup;
+  try {
+    await updateSketchReferences(sketchId, {
+      editSourceImageId: baseImageId,
+      markup: { imageId: markup.id, baseImageId }
+    });
+  } catch (error) {
+    await decrementRefCountAndMaybeDelete([markup.id]);
+    throw error;
+  }
+  if (previous) await decrementRefCountAndMaybeDelete([previous.imageId]);
+}
+
+export async function extractRasterReference(
+  sketchId: ID,
+  imageId: ID
+): Promise<void> {
+  const image = await getDisplayImage(imageId);
+  await addSketchReference(
+    sketchId,
+    image.poster ?? (await rasterizeImage(image.blob)),
+    imageId
+  );
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
@@ -405,6 +909,30 @@ export function submitSketch(sketchId: ID): void {
   queue.enqueue({
     id: sketchId,
     run: (controller) => runGeneration(sketchId, controller)
+  });
+}
+
+async function recordGenerationAttempt(
+  sketch: Sketch,
+  response: Pick<CompletionResponse, "id" | "usage" | "imageMetadata">,
+  snapshot: SketchRequestSnapshot,
+  apiKey: string,
+  signal: AbortSignal
+): Promise<void> {
+  const attemptCost = await resolveAttemptCost(
+    response.usage,
+    response.id,
+    apiKey,
+    signal
+  );
+  signal.throwIfAborted();
+  delete costReservations[sketch.id];
+  await updateSketch(sketch.id, {
+    costActualUsd: addKnownCost(sketch.costActualUsd, attemptCost),
+    costUnreported: !!sketch.costUnreported || attemptCost === null,
+    generationId: response.id || sketch.generationId,
+    requestSnapshot: snapshot,
+    resultMetadata: response.imageMetadata
   });
 }
 
@@ -441,7 +969,20 @@ async function runGeneration(
   await updateSketch(sketchId, { status: "generating" });
 
   const stagedImageIds: ID[] = [];
+  let requestSnapshot: SketchRequestSnapshot | null = null;
+  let requestStarted = false;
+  let responseReceived = false;
   try {
+    await loadImageEndpoints(chain.modelId);
+    if (
+      isGptImage26(chain.modelId) &&
+      (!capabilities.advanced.endpoint || capabilities.advanced.error)
+    ) {
+      throw new Error(
+        capabilities.advanced.error ??
+          "Sunburst image endpoint capabilities could not be confirmed."
+      );
+    }
     const chainSketches = sketchesForChain(sketch.chainId);
 
     const composed = await composeRequest({
@@ -450,11 +991,21 @@ async function runGeneration(
       boardSettings: board.settings,
       capabilities,
       getImageBase64: async (id) => {
-        const stored = await getStoredImage(id);
-        if (!stored) throw new Error(`Image ${id} not found`);
-        return blobToBase64(stored.blob);
+        const stored = await getDisplayImage(id);
+        if (!["image/png", "image/jpeg", "image/webp"].includes(stored.mime)) {
+          throw new Error(
+            "Edit inputs must be raster PNG, JPEG, or WebP. Extract a GIF still frame or rasterize SVG explicitly first."
+          );
+        }
+        const url = await blobToBase64(stored.blob);
+        if (url.length > 20_971_520)
+          throw new Error(
+            "This reference exceeds the upstream JSON image limit after base64 encoding. Use a smaller image."
+          );
+        return url;
       }
     });
+    requestSnapshot = composed.snapshot;
 
     // Validate the effective input count before estimating or sending.
     if (composed.inputImageCount < capabilities.minInputImages) {
@@ -474,12 +1025,42 @@ async function runGeneration(
       return;
     }
 
-    const estimate = estimateCost(capabilities, composed.inputImageCount);
+    const estimate = estimateCost(
+      capabilities,
+      composed.inputImageCount,
+      sketch.outputCount ?? 1
+    );
+    const reservationTotal = (chainOnly: boolean) =>
+      Object.entries(costReservations).reduce(
+        (sum, [id, value]) =>
+          sum +
+          (!chainOnly || getSketchById(id)?.chainId === chain.id ? value : 0),
+        0
+      );
+    const sessionCap = board.settings.sessionCostCapUsd;
+    const chainCap = chain.chainCostCapUsd;
+    if (
+      (sessionCap !== null && getSessionBudgetUsed() >= sessionCap) ||
+      (chainCap !== null &&
+        chainCostTotal(chain.id) + reservationTotal(true) >= chainCap)
+    ) {
+      throw new Error(
+        "The cost cap is already reached, including in-flight estimates. Increase it before generating."
+      );
+    }
+    if (
+      estimate === null &&
+      (sessionCap !== null || chainCap !== null) &&
+      !sketch.budgetAcknowledged
+    ) {
+      throw new Error(
+        "This token-billed request has no reliable pre-send estimate. Acknowledge the budget limitation before generating; use an OpenRouter key spending limit for a hard cap."
+      );
+    }
     if (estimate !== null) {
-      const sessionCap = board.settings.sessionCostCapUsd;
       if (
         sessionCap !== null &&
-        getSessionCostTotal() + estimate > sessionCap
+        getSessionBudgetUsed() + estimate > sessionCap
       ) {
         await updateSketch(sketchId, {
           status: "error",
@@ -489,8 +1070,10 @@ async function runGeneration(
         });
         return;
       }
-      const chainCap = chain.chainCostCapUsd;
-      if (chainCap !== null && chainCostTotal(chain.id) + estimate > chainCap) {
+      if (
+        chainCap !== null &&
+        chainCostTotal(chain.id) + reservationTotal(true) + estimate > chainCap
+      ) {
         await updateSketch(sketchId, {
           status: "error",
           error:
@@ -499,6 +1082,7 @@ async function runGeneration(
         });
         return;
       }
+      costReservations[sketchId] = estimate;
       await updateSketch(sketchId, { costEstimateUsd: estimate });
     } else {
       await updateSketch(sketchId, { costEstimateUsd: null });
@@ -507,6 +1091,7 @@ async function runGeneration(
     const onImages = (images: { image_url: { url: string } }[]) => {
       streamingPreviews[sketchId] = images.map((img) => img.image_url.url);
     };
+    requestStarted = true;
     const response =
       composed.generationApi === "images"
         ? composed.body.stream
@@ -540,6 +1125,15 @@ async function runGeneration(
               controller.signal
             );
 
+    responseReceived = true;
+    await recordGenerationAttempt(
+      sketch,
+      response,
+      composed.snapshot,
+      apiKey,
+      controller.signal
+    );
+
     if (!response.choices?.[0]?.message?.images?.length) {
       await updateSketch(sketchId, {
         status: "error",
@@ -550,17 +1144,29 @@ async function runGeneration(
     }
 
     // Store generated images as Blobs
+    const warnings: string[] = [];
+    const expectedMime = (
+      {
+        png: "image/png",
+        jpeg: "image/jpeg",
+        webp: "image/webp",
+        gif: "image/gif",
+        svg: "image/svg+xml"
+      } as Record<string, string>
+    )[sketch.outputFormat ?? ""];
     for (const imgItem of response.choices[0].message.images) {
       const dataUrl = imgItem.image_url.url;
       const blob = await dataUrlToBlob(dataUrl);
       const stored = await storeImageBlob(blob, "generated");
       stagedImageIds.push(stored.id);
-    }
-
-    // Parse cost
-    let actualCost = parseCostFromResponse(response);
-    if (actualCost === null && response.id) {
-      actualCost = await fetchGenerationCost(response.id, apiKey);
+      if (expectedMime && stored.mime !== expectedMime)
+        warnings.push(
+          `Requested ${sketch.outputFormat}, but the provider returned ${stored.mime}. The original output was preserved.`
+        );
+      if (stored.mime === "image/gif" && (stored.frameCount ?? 0) < 2)
+        warnings.push(
+          "The provider returned a static GIF, not a multi-frame animation."
+        );
     }
 
     if (controller.signal.aborted) {
@@ -572,10 +1178,10 @@ async function runGeneration(
     await updateSketch(sketchId, {
       status: "done",
       resultImageIds: [...stagedImageIds],
-      costActualUsd: actualCost,
       requestSnapshot: composed.snapshot,
       error: null,
-      errorRaw: null
+      errorRaw: null,
+      resultWarning: warnings.length ? [...new Set(warnings)].join(" ") : null
     });
     stagedImageIds.length = 0;
   } catch (e) {
@@ -583,18 +1189,50 @@ async function runGeneration(
       const imageIds = stagedImageIds.splice(0);
       await decrementRefCountAndMaybeDelete(imageIds);
     }
-    if (e instanceof DOMException && e.name === "AbortError") {
+    if (
+      controller.signal.aborted ||
+      (e instanceof DOMException && e.name === "AbortError")
+    ) {
       // Cancelled by trash — don't update status (sketch is being deleted)
       return;
     }
+    let displayError: unknown = e;
+    if (
+      requestSnapshot &&
+      (e instanceof ImageResponseError ||
+        (e instanceof OpenRouterApiError && e.inBand))
+    ) {
+      try {
+        await recordGenerationAttempt(
+          sketch,
+          { id: e.generationId, usage: e.usage },
+          requestSnapshot,
+          apiKey,
+          controller.signal
+        );
+      } catch (billingError) {
+        if (controller.signal.aborted) return;
+        displayError = new Error(
+          `${humanizeError(e)} Saving billing details failed: ${humanizeError(billingError)}`,
+          { cause: billingError }
+        );
+      }
+    }
+    if (controller.signal.aborted) return;
     await updateSketch(sketchId, {
       status: "error",
       resultImageIds: [],
-      error: humanizeError(e),
-      errorRaw: rawErrorDetails(e)
+      error: humanizeError(displayError),
+      errorRaw: rawErrorDetails(e),
+      ...(requestStarted &&
+      !responseReceived &&
+      (e instanceof TypeError || e instanceof SyntaxError)
+        ? { costUnreported: true }
+        : {})
     });
   } finally {
     delete streamingPreviews[sketchId];
+    delete costReservations[sketchId];
   }
 }
 
@@ -634,7 +1272,10 @@ export async function trashSketchesFrom(
   }
 
   // Collect all generated image IDs to decrement
-  const allImageIds = doomed.flatMap((s) => s.resultImageIds);
+  const allImageIds = doomed.flatMap((s) => [
+    ...s.resultImageIds,
+    ...ownedInputImages(s)
+  ]);
   await decrementRefCountAndMaybeDelete(allImageIds);
 
   // Delete from DB
@@ -705,16 +1346,7 @@ function initialForkDraft(
     modelId,
     prompt: source.prompt,
     attach: { ...source.attach },
-    aspectRatio: source.aspectRatio,
-    imageSize: source.imageSize,
-    quality: source.quality,
-    background: source.background,
-    outputCount: source.outputCount ?? 1,
-    outputFormat: source.outputFormat ?? null,
-    outputCompression: source.outputCompression ?? null,
-    seed: source.seed ?? null,
-    streamEnabled: source.streamEnabled,
-    reasoningEffort: source.reasoningEffort,
+    ...copyGenerationSettings(source),
     status: "draft",
     error: null,
     errorRaw: null,
@@ -764,8 +1396,49 @@ function copyCompletedPath(path: Sketch[], newChainId: ID): Sketch[] {
     // or cost in this fork.
     costEstimateUsd: null,
     costActualUsd: null,
+    costUnreported: false,
     createdAt: Date.now()
   }));
+}
+
+async function persistSketchesWithImages(
+  sketches: Sketch[],
+  chain?: Chain
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(["chains", "sketches", "images"], "readwrite");
+  try {
+    if (chain) await tx.objectStore("chains").put(chain);
+    for (const sketch of sketches) {
+      for (const id of [
+        ...sketch.resultImageIds,
+        ...ownedInputImages(sketch)
+      ]) {
+        const image = await tx.objectStore("images").get(id);
+        if (!image)
+          throw new Error("A referenced image is no longer available.");
+        image.refCount++;
+        await tx.objectStore("images").put(image);
+      }
+      await tx.objectStore("sketches").put(sketch);
+    }
+    await tx.done;
+  } catch (error) {
+    try {
+      tx.abort();
+    } catch (abortError) {
+      if (!(
+        abortError instanceof DOMException &&
+        abortError.name === "InvalidStateError"
+      ))
+        throw abortError;
+    }
+    await tx.done.then(
+      () => {},
+      () => {}
+    );
+    throw error;
+  }
 }
 
 async function persistFork(
@@ -773,15 +1446,9 @@ async function persistFork(
   copies: Sketch[],
   draft: Sketch
 ): Promise<void> {
+  await persistSketchesWithImages([...copies, draft], chain);
   boardState.chains.push(chain);
   boardState.sketches.push(...copies, draft);
-
-  await saveChain(chain);
-  for (const copy of copies) {
-    await incrementRefCount(copy.resultImageIds);
-    await saveSketch(copy);
-  }
-  await saveSketch(draft);
 }
 
 function refinementDraft(
@@ -799,16 +1466,7 @@ function refinementDraft(
     modelId,
     prompt,
     attach: { ...template.attach },
-    aspectRatio: template.aspectRatio,
-    imageSize: template.imageSize,
-    quality: template.quality,
-    background: template.background,
-    outputCount: template.outputCount ?? 1,
-    outputFormat: template.outputFormat ?? null,
-    outputCompression: template.outputCompression ?? null,
-    seed: template.seed ?? null,
-    streamEnabled: template.streamEnabled,
-    reasoningEffort: template.reasoningEffort,
+    ...copyRefinementSettings(template),
     status: "draft",
     error: null,
     errorRaw: null,
@@ -842,16 +1500,7 @@ export async function forkReroll(
       modelId: chain.modelId,
       prompt: source.prompt,
       attach: { ...source.attach },
-      aspectRatio: source.aspectRatio,
-      imageSize: source.imageSize,
-      quality: source.quality,
-      background: source.background,
-      outputCount: source.outputCount ?? 1,
-      outputFormat: source.outputFormat ?? null,
-      outputCompression: source.outputCompression ?? null,
-      seed: source.seed ?? null,
-      streamEnabled: source.streamEnabled,
-      reasoningEffort: source.reasoningEffort,
+      ...copyGenerationSettings(source),
       status: "draft",
       error: null,
       errorRaw: null,

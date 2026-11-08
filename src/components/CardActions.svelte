@@ -13,6 +13,7 @@
     const {
         sketch,
         chain,
+        busy = false,
         pendingTrash,
         pendingTrashCount,
         onTrashClick,
@@ -21,6 +22,7 @@
     }: {
         sketch: Sketch;
         chain: Chain;
+        busy?: boolean;
         pendingTrash: boolean;
         pendingTrashCount: number;
         onTrashClick: () => void;
@@ -162,6 +164,7 @@
         <button
             class="btn-ghost retry-btn"
             onclick={() => retrySketch(sketch.id)}
+            disabled={busy}
             title="Retry"
         >
             Retry
@@ -179,7 +182,7 @@
                 class="fork-count"
                 id="fork-count-{sketch.id}"
                 bind:value={forkCount}
-                disabled={forksCreating}
+                disabled={forksCreating || busy}
             >
                 <option value="1">1</option>
                 <option value="2">2</option>
@@ -197,7 +200,7 @@
                 <button
                     class="btn-icon action-btn"
                     onclick={handleInitialForks}
-                    disabled={forksCreating}
+                    disabled={forksCreating || busy}
                     aria-label="Create {forkCount} initial-run {forkCount ===
                     '1'
                         ? 'fork'
@@ -219,7 +222,7 @@
                 <button
                     class="btn-icon action-btn"
                     onclick={handleReroll}
-                    disabled={forksCreating}
+                    disabled={forksCreating || busy}
                     aria-label="Create {forkCount} re-run {forkCount === '1'
                         ? 'fork'
                         : 'forks'}"
@@ -239,7 +242,7 @@
                 <button
                     class="btn-icon action-btn"
                     onclick={handleRefinementForks}
-                    disabled={forksCreating}
+                    disabled={forksCreating || busy}
                     aria-label="Create {forkCount} refinement {forkCount === '1'
                         ? 'fork'
                         : 'forks'}"
@@ -264,6 +267,7 @@
             class="btn-icon trash-btn"
             bind:this={trashBtn}
             onclick={requestTrash}
+            disabled={busy}
             aria-label="Trash this card and descendants"
             title="Trash"
         >
@@ -271,7 +275,10 @@
         </button>
     {:else}
         <span class="trash-confirm-row">
-            <button class="btn-danger confirm-btn" onclick={onTrashConfirm}
+            <button
+                class="btn-danger confirm-btn"
+                onclick={onTrashConfirm}
+                disabled={busy}
                 >Delete {pendingTrashCount}
                 {pendingTrashCount === 1 ? "card" : "cards"}</button
             >

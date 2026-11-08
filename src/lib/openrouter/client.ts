@@ -6,6 +6,7 @@ import type {
   CompletionUsage,
   ModelListResponse,
   ImageModelDiscoveryResponse,
+  ImageModelEndpointsResponse,
   ImageGenerationRequest,
   ImageGenerationResponse,
   ImageGenerationResponseData,
@@ -32,6 +33,9 @@ export class OpenRouterApiError extends Error {
   readonly providerCode: string | null;
   readonly metadata: OpenRouterErrorMetadata | null;
   readonly retryAfterSeconds: number | null;
+  readonly inBand: boolean;
+  readonly generationId: string;
+  readonly usage?: CompletionUsage;
   /** Raw response body, pretty-printed JSON when possible. */
   readonly rawBody: string;
 
@@ -40,6 +44,9 @@ export class OpenRouterApiError extends Error {
     message: string;
     metadata?: OpenRouterErrorMetadata | null;
     retryAfterSeconds?: number | null;
+    inBand?: boolean;
+    generationId?: string;
+    usage?: CompletionUsage;
     rawBody: string;
   }) {
     super(opts.message);
@@ -50,7 +57,22 @@ export class OpenRouterApiError extends Error {
     this.providerCode =
       (this.metadata?.provider_code as string | undefined) ?? null;
     this.retryAfterSeconds = opts.retryAfterSeconds ?? null;
+    this.inBand = opts.inBand ?? false;
+    this.generationId = opts.generationId ?? "";
+    this.usage = opts.usage;
     this.rawBody = opts.rawBody;
+  }
+}
+
+export class ImageResponseError extends Error {
+  constructor(
+    message: string,
+    readonly generationId: string,
+    readonly usage?: CompletionUsage,
+    cause?: unknown
+  ) {
+    super(message, { cause });
+    this.name = "ImageResponseError";
   }
 }
 
@@ -102,12 +124,16 @@ async function apiErrorFromResponse(
  */
 function apiErrorFromChoiceError(
   detail: OpenRouterErrorDetail,
-  fullResponse: unknown
+  fullResponse: unknown,
+  generation: Pick<CompletionResponse, "id" | "usage">
 ): OpenRouterApiError {
   return new OpenRouterApiError({
     status: typeof detail.code === "number" ? detail.code : 0,
     message: detail.message,
     metadata: detail.metadata ?? null,
+    inBand: true,
+    generationId: generation.id,
+    usage: generation.usage,
     rawBody: JSON.stringify(fullResponse, null, 2)
   });
 }
@@ -147,6 +173,23 @@ export async function listImageModelCapabilities(
   return res.json() as Promise<ImageModelDiscoveryResponse>;
 }
 
+export async function listImageModelEndpoints(
+  modelId: string,
+  signal?: AbortSignal
+): Promise<ImageModelEndpointsResponse> {
+  const modelPath = modelId.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(`${BASE}/images/models/${modelPath}/endpoints`, {
+    signal
+  });
+  if (!res.ok)
+    throw new Error(`Failed to fetch image endpoints: ${res.status}`);
+  const result = (await res.json()) as ImageModelEndpointsResponse;
+  if (result.id !== modelId || !Array.isArray(result.endpoints)) {
+    throw new Error("OpenRouter returned invalid image endpoint records.");
+  }
+  return result;
+}
+
 export async function chatCompletion(
   body: CompletionRequest,
   apiKey: string,
@@ -176,7 +219,7 @@ export async function chatCompletion(
   // https://openrouter.ai/docs/api/reference/errors-and-debugging
   const choiceError = json.choices?.[0]?.error;
   if (choiceError) {
-    throw apiErrorFromChoiceError(choiceError, json);
+    throw apiErrorFromChoiceError(choiceError, json, json);
   }
 
   return json;
@@ -293,7 +336,7 @@ export async function chatCompletionStream(
   };
 
   if (midStreamError) {
-    throw apiErrorFromChoiceError(midStreamError, response);
+    throw apiErrorFromChoiceError(midStreamError, response, response);
   }
 
   return response;
@@ -308,6 +351,19 @@ function normalizedImageResponse(
   json: ImageGenerationResponse,
   generationId: string
 ): CompletionResponse {
+  if (
+    !Array.isArray(json.data) ||
+    json.data.length === 0 ||
+    json.data.some(
+      (item) => !item || typeof item.b64_json !== "string" || !item.b64_json
+    )
+  ) {
+    throw new ImageResponseError(
+      "OpenRouter returned no valid completed image.",
+      generationId,
+      json.usage
+    );
+  }
   return {
     id: generationId,
     choices: [
@@ -316,7 +372,7 @@ function normalizedImageResponse(
         message: {
           role: "assistant",
           content: null,
-          images: (json.data ?? []).map((item) => ({
+          images: json.data.map((item) => ({
             type: "image_url" as const,
             image_url: {
               url: imageDataUrl(item.b64_json, item.media_type)
@@ -326,7 +382,14 @@ function normalizedImageResponse(
         finish_reason: "stop"
       }
     ],
-    usage: json.usage
+    usage: json.usage,
+    imageMetadata: {
+      size: json.size,
+      quality: json.quality,
+      background: json.background,
+      output_format: json.output_format,
+      svg_usage: json.svg_usage
+    }
   };
 }
 
@@ -354,15 +417,34 @@ export async function imageGeneration(
 
   if (!res.ok) throw await apiErrorFromResponse(res);
 
-  const json = (await res.json()) as ImageGenerationResponse & {
-    error?: OpenRouterErrorDetail;
-  };
-  if (json.error) throw apiErrorFromChoiceError(json.error, json);
+  const generationId = res.headers.get("X-Generation-Id") ?? "";
+  let json: ImageGenerationResponse & { error?: OpenRouterErrorDetail };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch (error) {
+    if (signal?.aborted)
+      throw new DOMException("Generation cancelled", "AbortError");
+    if (error instanceof DOMException && error.name === "AbortError")
+      throw error;
+    throw new ImageResponseError(
+      "OpenRouter returned an invalid image response.",
+      generationId,
+      undefined,
+      error
+    );
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json))
+    throw new ImageResponseError(
+      "OpenRouter returned an invalid image response.",
+      generationId
+    );
+  if (json.error)
+    throw apiErrorFromChoiceError(json.error, json, {
+      id: generationId,
+      usage: json.usage
+    });
 
-  return normalizedImageResponse(
-    json,
-    res.headers.get("X-Generation-Id") ?? ""
-  );
+  return normalizedImageResponse(json, generationId);
 }
 
 /** Stream normalized Image API partials and return the completed response. */
@@ -380,15 +462,21 @@ export async function imageGenerationStream(
   });
 
   if (!res.ok) throw await apiErrorFromResponse(res);
-  if (!res.body) throw new Error("Streaming response has no body");
+  if (!res.body)
+    throw new ImageResponseError(
+      "Streaming response has no body.",
+      res.headers.get("X-Generation-Id") ?? ""
+    );
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const images: CompletionImageItem[] = [];
+  let finalData: ImageGenerationResponseData[] | null = null;
   let usage: CompletionUsage | undefined;
   let streamError: OpenRouterErrorDetail | null = null;
   let generationId = res.headers.get("X-Generation-Id") ?? "";
+  let metadata: CompletionResponse["imageMetadata"];
+  let eventLines: string[] = [];
 
   function handleEvent(data: string): void {
     if (!data || data === "[DONE]") return;
@@ -402,12 +490,8 @@ export async function imageGenerationStream(
       usage?: CompletionUsage;
       data?: ImageGenerationResponseData[];
       error?: OpenRouterErrorDetail;
-    };
-    try {
-      event = JSON.parse(data) as typeof event;
-    } catch {
-      return;
-    }
+    } & NonNullable<CompletionResponse["imageMetadata"]>;
+    event = JSON.parse(data) as typeof event;
 
     if (event.id) generationId = event.id;
     if (event.usage) usage = event.usage;
@@ -416,44 +500,39 @@ export async function imageGenerationStream(
       return;
     }
 
-    const isImageEvent =
-      event.type === "image_generation.partial_image" ||
-      event.type === "image_generation.completed";
-    if (isImageEvent && event.b64_json) {
-      const image: CompletionImageItem = {
-        type: "image_url",
-        image_url: {
-          url: imageDataUrl(event.b64_json, event.media_type)
+    if (event.type === "image_generation.partial_image" && event.b64_json) {
+      callbacks.onImages?.([
+        {
+          type: "image_url",
+          image_url: {
+            url: imageDataUrl(event.b64_json, event.media_type)
+          }
         }
-      };
-      const index = event.partial_image_index;
-      if (
-        event.type === "image_generation.partial_image" &&
-        index !== undefined
-      ) {
-        images[index] = image;
-      } else {
-        images[index ?? 0] = image;
-      }
-      callbacks.onImages?.([...images]);
+      ]);
     }
-
-    if (event.data?.length) {
-      const finalImages = event.data.map((item) => ({
-        type: "image_url" as const,
-        image_url: {
-          url: imageDataUrl(item.b64_json, item.media_type)
-        }
-      }));
-      images.splice(0, images.length, ...finalImages);
-      callbacks.onImages?.([...images]);
+    if (event.type === "image_generation.completed") {
+      finalData =
+        event.data ??
+        (event.b64_json
+          ? [{ b64_json: event.b64_json, media_type: event.media_type }]
+          : []);
+      metadata = {
+        size: event.size,
+        quality: event.quality,
+        background: event.background,
+        output_format: event.output_format,
+        svg_usage: event.svg_usage
+      };
     }
   }
 
   function handleLine(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith(":")) return;
-    if (trimmed.startsWith("data: ")) handleEvent(trimmed.slice(6));
+    if (!line) {
+      if (eventLines.length) handleEvent(eventLines.join("\n"));
+      eventLines = [];
+    } else if (line.startsWith("data:")) {
+      eventLines.push(line.slice(5).replace(/^ /, ""));
+    }
   }
 
   try {
@@ -463,28 +542,46 @@ export async function imageGenerationStream(
       buffer += decoder.decode(value, { stream: true });
       let lineEnd: number;
       while ((lineEnd = buffer.indexOf("\n")) !== -1) {
-        handleLine(buffer.slice(0, lineEnd));
+        handleLine(buffer.slice(0, lineEnd).replace(/\r$/, ""));
         buffer = buffer.slice(lineEnd + 1);
       }
     }
-    if (buffer) handleLine(buffer);
+    buffer += decoder.decode();
+    if (buffer) handleLine(buffer.replace(/\r$/, ""));
+    handleLine("");
+  } catch (error) {
+    if (signal?.aborted)
+      throw new DOMException("Generation cancelled", "AbortError");
+    if (error instanceof DOMException && error.name === "AbortError")
+      throw error;
+    throw new ImageResponseError(
+      "OpenRouter returned an invalid or interrupted image stream.",
+      generationId,
+      usage,
+      error
+    );
   } finally {
     reader.releaseLock();
   }
 
-  const response: CompletionResponse = {
-    id: generationId,
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content: null, images },
-        finish_reason: "stop"
-      }
-    ],
-    usage
-  };
-  if (streamError) throw apiErrorFromChoiceError(streamError, response);
-  return response;
+  if (streamError)
+    throw apiErrorFromChoiceError(
+      streamError,
+      { id: generationId, usage, error: streamError },
+      { id: generationId, usage }
+    );
+  if (signal?.aborted)
+    throw new DOMException("Generation cancelled", "AbortError");
+  if (!finalData)
+    throw new ImageResponseError(
+      "Image stream ended without a completed image. Partial previews were not saved.",
+      generationId,
+      usage
+    );
+  return normalizedImageResponse(
+    { data: finalData, usage, ...metadata },
+    generationId
+  );
 }
 
 /**
@@ -493,18 +590,23 @@ export async function imageGenerationStream(
  */
 export async function fetchGenerationCost(
   generationId: string,
-  apiKey: string
+  apiKey: string,
+  signal?: AbortSignal
 ): Promise<number | null> {
   try {
     const res = await fetch(
       `${BASE}/generation?id=${encodeURIComponent(generationId)}`,
       {
+        signal,
         headers: { Authorization: `Bearer ${apiKey}` }
       }
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { data?: { total_cost?: number } };
-    return data.data?.total_cost ?? null;
+    const cost = data.data?.total_cost;
+    return typeof cost === "number" && Number.isFinite(cost) && cost >= 0
+      ? cost
+      : null;
   } catch {
     return null;
   }
