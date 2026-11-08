@@ -24,7 +24,7 @@
 
     async function submit(e: SubmitEvent) {
         e.preventDefault();
-        if (!modelId || !prompt.trim()) return;
+        if (!modelId || submitting) return;
         submitting = true;
         try {
             const chain = await createChain(modelId);
@@ -47,20 +47,21 @@
         <ModelPicker value={modelId} onSelect={(id) => (modelId = id)} />
     </div>
 
-    <label for="root-prompt" class="composer__prompt-label">Prompt</label>
+    <label for="root-prompt" class="composer__prompt-label"
+        >Prompt (optional)</label
+    >
     <textarea
         id="root-prompt"
         bind:this={promptInput}
         bind:value={prompt}
         rows={3}
-        placeholder="Describe what to generate…"
-        required></textarea>
+        placeholder="Add a prompt now or after creating the draft…"></textarea>
 
     <div class="composer__actions">
         <button
             type="submit"
             class="btn-primary"
-            disabled={!modelId || !prompt.trim() || submitting}
+            disabled={!modelId || submitting}
         >
             {submitting ? "Creating…" : "Create Draft"}
         </button>

@@ -103,6 +103,15 @@
                 Your key is only ever sent directly to OpenRouter! This tool
                 runs locally in your browser and there is no backend server or
                 tracking capability.
+                <a
+                    href="https://github.com/lumikeiju/tarralappu"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    View source code on GitHub!<span class="sr-only">
+                        (opens in a new tab)</span
+                    >
+                </a>
             </p>
         </form>
     {/if}
@@ -174,5 +183,9 @@
         font-size: 0.75rem;
         color: var(--clr-text-3);
         margin: 0;
+    }
+    .hint a {
+        color: inherit;
+        text-decoration: underline;
     }
 </style>

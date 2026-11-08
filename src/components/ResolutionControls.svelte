@@ -2,7 +2,8 @@
     import type { ModelCapabilities } from "../lib/openrouter/types";
     import {
         effectiveOption,
-        supportsReasoningEffort
+        supportsReasoningEffort,
+        isGptImage26
     } from "../lib/openrouter/capabilities";
 
     export interface ResolutionUpdate {
@@ -56,7 +57,12 @@
     const compressionRange = $derived(capabilities?.outputCompression ?? null);
     const maxOutputs = $derived(capabilities?.maxOutputs ?? 1);
     const supportsSeed = $derived(capabilities?.supportsSeed ?? false);
-    const canStream = $derived(capabilities?.supportsStreaming ?? false);
+    const canStream = $derived(
+        (capabilities?.supportsStreaming ?? false) &&
+            outputFormat !== "gif" &&
+            !(outputFormat === "svg" && isGptImage26(capabilities?.id ?? "")) &&
+            outputCount <= 1
+    );
     const outputCountValue = $derived(
         Number.isFinite(outputCount)
             ? Math.min(maxOutputs, Math.max(1, Math.trunc(outputCount)))
@@ -109,9 +115,7 @@
     const backgroundValue = $derived(
         effectiveOption(background ?? "auto", backgrounds) ?? ""
     );
-    const outputFormatValue = $derived(
-        outputFormat && outputFormats.includes(outputFormat) ? outputFormat : ""
-    );
+    const outputFormatValue = $derived(outputFormat ?? "");
 
     function setOutputCount(value: string) {
         const parsed = Number(value);
@@ -255,6 +259,11 @@
                     aria-label="Output format"
                 >
                     <option value="">Provider default</option>
+                    {#if outputFormat && !outputFormats.includes(outputFormat)}
+                        <option value={outputFormat}
+                            >Unavailable ({outputFormat}) - choose another</option
+                        >
+                    {/if}
                     {#each outputFormats as format (format)}
                         <option value={format}>{format}</option>
                     {/each}
@@ -276,6 +285,8 @@
                     onchange={(e) =>
                         setCompression((e.target as HTMLInputElement).value)}
                     aria-label="Output compression"
+                    disabled={outputFormat !== "jpeg" &&
+                        outputFormat !== "webp"}
                 />
                 <span class="range-hint"
                     >{compressionRange.min}–{compressionRange.max}</span
@@ -324,12 +335,13 @@
             </label>
         {/if}
 
-        {#if canStream}
+        {#if capabilities?.supportsStreaming}
             <div class="stream-control">
                 <label class="check-label">
                     <input
                         type="checkbox"
-                        checked={streamEnabled}
+                        checked={canStream && streamEnabled}
+                        disabled={!canStream}
                         onchange={(e) =>
                             onChange({
                                 streamEnabled: (e.target as HTMLInputElement)
@@ -340,9 +352,15 @@
                     Stream
                 </label>
                 <p id="{uid}-stream-hint" class="stream-hint">
-                    Shows partial previews while the image renders, when the
-                    provider sends them. Cancelled generations aren't billed
-                    either way.
+                    {#if !canStream}
+                        GIF, Sunburst SVG, and multiple outputs use buffered
+                        completion; incompatible streaming settings are not
+                        sent.
+                    {:else}
+                        Shows provider-supplied raster previews. Only completed
+                        images are saved. Interrupted requests may still incur
+                        charges; check OpenRouter.
+                    {/if}
                 </p>
             </div>
         {/if}

@@ -31,7 +31,7 @@
     const inputCapHintId = `${uid}-input-cap-hint`;
 
     function currentImageCount(flags: AttachFlags): number {
-        let n = isRefinement ? parentImageCount : 0;
+        let n = parentImageCount;
         if (flags.styleRef && hasStyleRef) n++;
         if (flags.layoutRef && hasLayoutRef) n++;
         return n;
@@ -158,9 +158,9 @@
         </p>
     {:else if parentExceedsInputCap()}
         <p id={parentInputCapHintId} class="cap-warning" role="status">
-            This result has {parentImageCount} outputs, but this model accepts at
-            most {capabilities?.maxInputImages} reference images. Generate a single-output
-            result or choose a model with a larger limit.
+            There are {parentImageCount} selected source images, but this model accepts
+            at most {capabilities?.maxInputImages} inputs. Select one primary output
+            or remove a subject reference.
         </p>
     {:else if capabilities && currentImageCount(attach) < capabilities.minInputImages}
         <p class="cap-warning" role="status">
@@ -170,8 +170,8 @@
     {:else if capabilities && currentImageCount(attach) >= capabilities.maxInputImages}
         <p id={inputCapHintId} class="cap-warning" role="status">
             {#if parentFillsInputCap()}
-                Parent outputs use all {capabilities.maxInputImages} available reference
-                images. Uncheck an attached reference to replace one.
+                Selected source images use all {capabilities.maxInputImages} available
+                inputs. Choose one primary output or remove a subject reference.
             {:else}
                 Max {capabilities.maxInputImages} input image{capabilities.maxInputImages !==
                 1

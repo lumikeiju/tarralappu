@@ -3,81 +3,69 @@
     import {
         replaceGlobalImage,
         deleteGlobalImage,
-        validateImageFile,
-        getStoredImage,
-        createObjectUrl,
-        revokeObjectUrl
+        validateImageFile
     } from "../lib/db/images";
-    import { onDestroy, tick } from "svelte";
+    import { tick } from "svelte";
+    import MediaPreview from "./MediaPreview.svelte";
 
-    // Object URLs for display — revoke on teardown
-    let styleRefUrl = $state<string | null>(null);
-    let layoutRefUrl = $state<string | null>(null);
-
-    // Load object URLs when IDs change
-    $effect(() => {
-        const id = boardState.board?.settings.styleRefImageId;
-        if (!id) {
-            if (styleRefUrl) {
-                revokeObjectUrl(styleRefUrl);
-                styleRefUrl = null;
-            }
-            return;
-        }
-        getStoredImage(id).then((img) => {
-            if (styleRefUrl) revokeObjectUrl(styleRefUrl);
-            styleRefUrl = img ? createObjectUrl(img.blob) : null;
-        });
-    });
-    $effect(() => {
-        const id = boardState.board?.settings.layoutRefImageId;
-        if (!id) {
-            if (layoutRefUrl) {
-                revokeObjectUrl(layoutRefUrl);
-                layoutRefUrl = null;
-            }
-            return;
-        }
-        getStoredImage(id).then((img) => {
-            if (layoutRefUrl) revokeObjectUrl(layoutRefUrl);
-            layoutRefUrl = img ? createObjectUrl(img.blob) : null;
-        });
-    });
-
-    onDestroy(() => {
-        if (styleRefUrl) revokeObjectUrl(styleRefUrl);
-        if (layoutRefUrl) revokeObjectUrl(layoutRefUrl);
-    });
+    const styleRefId = $derived(
+        boardState.board?.settings.styleRefImageId ?? null
+    );
+    const layoutRefId = $derived(
+        boardState.board?.settings.layoutRefImageId ?? null
+    );
 
     let styleError = $state<string | null>(null);
     let layoutError = $state<string | null>(null);
+    let styleStatus = $state("");
+    let layoutStatus = $state("");
     let styleUploadInput = $state<HTMLInputElement>();
     let layoutUploadInput = $state<HTMLInputElement>();
+    let styleRemoveButton = $state<HTMLButtonElement>();
+    let layoutRemoveButton = $state<HTMLButtonElement>();
 
     async function uploadStyle(e: Event) {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
+        styleStatus = "";
         styleError = validateImageFile(file);
         if (styleError) return;
         const oldId = boardState.board?.settings.styleRefImageId ?? null;
-        const stored = await replaceGlobalImage(oldId, file, "styleRef");
-        await updateBoardSettings({ styleRefImageId: stored.id });
+        try {
+            const stored = await replaceGlobalImage(oldId, file, "styleRef");
+            await updateBoardSettings({ styleRefImageId: stored.id });
+            styleStatus = "Style reference uploaded.";
+            await tick();
+            styleRemoveButton?.focus();
+        } catch (cause) {
+            styleError = cause instanceof Error ? cause.message : String(cause);
+        }
     }
 
     async function uploadLayout(e: Event) {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
+        layoutStatus = "";
         layoutError = validateImageFile(file);
         if (layoutError) return;
         const oldId = boardState.board?.settings.layoutRefImageId ?? null;
-        const stored = await replaceGlobalImage(oldId, file, "layoutRef");
-        await updateBoardSettings({ layoutRefImageId: stored.id });
+        try {
+            const stored = await replaceGlobalImage(oldId, file, "layoutRef");
+            await updateBoardSettings({ layoutRefImageId: stored.id });
+            layoutStatus = "Layout reference uploaded.";
+            await tick();
+            layoutRemoveButton?.focus();
+        } catch (cause) {
+            layoutError =
+                cause instanceof Error ? cause.message : String(cause);
+        }
     }
 
     async function removeStyle() {
         const id = boardState.board?.settings.styleRefImageId;
         if (id) await deleteGlobalImage(id);
         await updateBoardSettings({ styleRefImageId: null });
+        styleStatus = "Style reference removed.";
         await tick();
         styleUploadInput?.focus();
     }
@@ -86,6 +74,7 @@
         const id = boardState.board?.settings.layoutRefImageId;
         if (id) await deleteGlobalImage(id);
         await updateBoardSettings({ layoutRefImageId: null });
+        layoutStatus = "Layout reference removed.";
         await tick();
         layoutUploadInput?.focus();
     }
@@ -99,16 +88,15 @@
         <div class="ref-slot">
             <span class="ref-slot__label">Style Reference</span>
             <p class="ref-slot__hint">Palette, texture, mood</p>
-            {#if styleRefUrl}
+            {#if styleRefId}
                 <div class="ref-preview">
-                    <img
-                        src={styleRefUrl}
+                    <MediaPreview
+                        imageId={styleRefId}
                         alt="Style reference"
-                        class="ref-img"
-                        width="100"
-                        height="100"
+                        compact
                     />
                     <button
+                        bind:this={styleRemoveButton}
                         class="btn-icon remove-btn"
                         onclick={removeStyle}
                         aria-label="Remove style reference">✕</button
@@ -134,22 +122,22 @@
                     <p class="ref-error" role="alert">{styleError}</p>
                 {/if}
             {/if}
+            {#if styleStatus}<p role="status">{styleStatus}</p>{/if}
         </div>
 
         <!-- Layout Reference -->
         <div class="ref-slot">
             <span class="ref-slot__label">Layout Reference</span>
             <p class="ref-slot__hint">Composition, placement</p>
-            {#if layoutRefUrl}
+            {#if layoutRefId}
                 <div class="ref-preview">
-                    <img
-                        src={layoutRefUrl}
+                    <MediaPreview
+                        imageId={layoutRefId}
                         alt="Layout reference"
-                        class="ref-img"
-                        width="100"
-                        height="100"
+                        compact
                     />
                     <button
+                        bind:this={layoutRemoveButton}
                         class="btn-icon remove-btn"
                         onclick={removeLayout}
                         aria-label="Remove layout reference">✕</button
@@ -175,6 +163,7 @@
                     <p class="ref-error" role="alert">{layoutError}</p>
                 {/if}
             {/if}
+            {#if layoutStatus}<p role="status">{layoutStatus}</p>{/if}
         </div>
     </div>
 </section>
@@ -211,22 +200,11 @@
         color: var(--clr-text-3);
         margin: 0;
     }
-    .ref-preview {
-        position: relative;
-        width: 100%;
-        aspect-ratio: 1 / 1;
-    }
-    .ref-img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border-radius: 4px;
-        border: 1px solid var(--clr-border);
+    .ref-preview :global(.media-preview img) {
+        max-height: 100px;
     }
     .remove-btn {
-        position: absolute;
-        top: 4px;
-        right: 4px;
+        align-self: flex-end;
         background: var(--clr-text);
         color: var(--clr-surface);
         border-radius: 50%;

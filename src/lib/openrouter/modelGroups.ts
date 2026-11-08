@@ -6,6 +6,20 @@ export interface CreatorGroup {
   models: ModelCapabilities[];
 }
 
+export type ModelPickerSection = "pinned" | "catalog";
+
+export function isSelectedModelOption(
+  modelId: string,
+  selectedId: string | null,
+  section: ModelPickerSection,
+  selectedSection: ModelPickerSection,
+  pinned: boolean
+): boolean {
+  return (
+    modelId === selectedId && section === (pinned ? selectedSection : "catalog")
+  );
+}
+
 // Friendly display names for known creators (model id prefix before "/").
 const CREATOR_LABELS: Record<string, string> = {
   google: "Google",

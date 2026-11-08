@@ -4,161 +4,213 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v2.0.0 (2026-11-07)
+
+### Added
+
+- Added endpoint-aware complexity and moderation controls for GPT Image 2.6 Sunburst and Flare through OpenRouter; gated unconfirmed features.
+- Added persistent per-sketch references, keyboard-accessible ordering, primary edit-source selection, and explicit GIF frame extraction and SVG rasterization.
+- Added original-media downloads, image dimensions and format details, and opt-in GIF playback on cards and in the lightbox.
+- Added endpoint-gated transparent PNG markup uploads and a keyboard-accessible annotation editor. Gated custom sizes, GIF controls, and preview counts; left unsupported masks and SVG authoring unavailable.
+- Added editable, persistent image descriptions for media alternative text.
+- Added global-reference upload announcements and focused the replacement control after upload.
+- Minimized the session-cap card and moved detailed budget guidance into a disclosure.
+- Added regression tests for endpoint capabilities, requests, reference limits, option inheritance, media identity, and streaming.
+- Added a GitHub source link to the API-key privacy hint.
+- Linked the footer's “open-source” text to the GitHub repository.
+- Pinned GPT Image 2.6 Sunburst and Flare on new boards and existing boards once, while preserving later pin changes.
+- Added cancellable, budget-aware Random actions for the Style Guide, Prompt Board notes, and sketch prompts. Preserved note names and pending edits on failure or cancellation.
+- Allowed blank sketch drafts after model selection; kept nonempty prompts required for image generation.
+- Added refinement-specific random prompt ideas, persistence, pending-edit protection, and shared request and budget safeguards.
+
+### Changed
+
+- Moved source validation to `main` and pull requests without deployment.
+- Replaced automatic deployment with manual `main` → `beta` → `stable` promotion; published tested artifacts without rebuilding and attached ZIPs, checksums, manifests, and provenance.
+- Required `stable` / (root) Pages configuration and explicit approval; verified candidates and builds and rejected unsupported versions and existing tags.
+- Switched to TypeScript 6 and standard `svelte-check`; removed preview dependencies and flags and retained Dependabot's TypeScript major-version block.
+- Routed all Random actions through OpenRouter's `~deepseek/deepseek-flash-latest` alias.
+- Clarified that local totals excluded deleted sketches and did not enforce provider spending limits.
+- Diversified random prompts with independently sampled subjects, settings, media, palettes, framing, lighting, and disruptions; avoided adjacent repeats and encouraged dramatic refinement changes.
+- Replaced the implementation plan with a concise [architecture guide](docs/architecture.md) covering modules, workflows, persistence, capability gates, costs, and deployment.
+- Condensed [AGENTS.md](AGENTS.md) to current conventions and documentation links.
+- Streamlined [CONTRIBUTING.md](CONTRIBUTING.md) to recurring development and release workflows.
+- Reworked [README.md](README.md) around the app workflow, privacy and costs, setup, documentation, and releases.
+- Standardized short Bun aliases in documentation and workflows; retained `bun run build` to invoke the project build.
+
+### Fixed
+
+- Disabled reasoning for Random requests after default reasoning tokens exhausted the output limit.
+- Preserved reported generation and Random costs across malformed responses, provider errors, and retries; flagged potentially unreported charges and displayed small costs accurately.
+- Made reference ownership and refinement creation atomic; rolled back failed reference changes and corrected model selection and request snapshots.
+- Kept partial SSE previews separate from final results and rejected incomplete or malformed image streams.
+- Blocked incompatible GIF, Sunburst SVG, compression, and multi-output streaming options.
+- Clarified uncertain cost estimates and local budget limits; required acknowledgment for capped requests without reliable estimates and reserved known in-flight costs.
+- Preserved reported costs and generation IDs when response storage or decoding failed; surfaced media-format mismatches.
+- Persisted forks and image references atomically; cleared obsolete edit sources and markup during refinement.
+- Preserved declared SVG dimensions during raster conversion.
+- Closed the image viewer on Escape and restored focus to its opener.
+- Replaced artist-specific Style Guide placeholder text with neutral color and lighting guidance.
+
+### Removed
+
+- Removed duplicate and obsolete customization instructions, the unnecessary Python activation requirement, and the redundant header GitHub icon.
+
 ## v1.12.3 (2026-10-31)
 
-### Fixes
+### Fixed
 
-- Switched Dependabot to the Bun ecosystem and ignored TypeScript major-version updates that are incompatible with the current Svelte language-tools bridge.
-- Corrected image request reasoning fields and validate model-specific option values before sending requests; pre-send cost estimates now use composed input-image counts and clean up staged images when generation is interrupted.
-- Recover queued or generating sketches as interrupted errors after reload, and surface initialization failures with a retry action.
-- Improved keyboard focus management, control names and states, color contrast, scrollable content access, and external-link indicators.
-- Restored the missing and misordered historical changelog entries.
+- Switched Dependabot to the Bun ecosystem and blocked incompatible TypeScript major upgrades.
+- Corrected image request reasoning fields, validated model options, based estimates on composed image counts, and cleaned up staged images after interruption.
+- Recovered queued or generating sketches as interrupted errors after reload; added an initialization retry action.
+- Improved keyboard focus, control names and states, color contrast, scroll access, and external-link indicators.
+- Restored missing and misordered changelog entries.
 
 ## v1.12.2 (2026-09-13)
 
-### Fixes
+### Fixed
 
-- Fixed final accessibility and responsive-layout issues, including unique attachment hint IDs, high-contrast lightbox focus, model-picker error feedback, and narrow-screen pricing overflow.
+- Fixed attachment hint IDs, lightbox focus contrast, model-picker error feedback, and narrow-screen pricing overflow.
 
 ## v1.12.1 (2026-09-13)
 
-### Fixes
+### Fixed
 
-- Fixed vertical alignment in the setup bar's compact controls by normalizing the parallel-control line height and input height.
+- Aligned compact setup controls by normalizing line and input heights.
 
 ## v1.12.0 (2026-09-13)
 
-### Features
+### Added
 
-- Added persistent model pinning to the model picker. Pinned models appear in a `PINNED` section at the top while remaining in their original creator groups.
+- Added persistent model pinning, with pinned models shown first and retained in their creator groups.
 
 ## v1.11.0 (2026-09-13)
 
-### Features
+### Added
 
-- Added initial-run forks for root drafts, with a 1–10 multiplier, copying the model and generation settings into independent editable draft chains so prompt variants can be prepared before generating.
+- Added 1–10 initial-run forks for root drafts, with independent editable chains that inherit model and generation settings.
 
-## v1.10.1 (2026-09-13)
+## v1.10.1 (2026-07-18)
 
-### Fixes
+### Fixed
 
-- Prevented long error URLs, raw API responses, and other card text from overflowing fixed sketch-card bounds.
+- Prevented long error URLs, raw API responses, and other card text from overflowing sketch cards.
 
 ## v1.10.0 (2026-07-18)
 
-### Features
+### Added
 
-- Added OpenRouter's dedicated Image API generation path for models returned by `/api/v1/images/models`, while retaining chat completions for legacy image models.
-- Added model-aware output count, format, compression, and seed controls, plus minimum and maximum reference-image validation.
-- Added support for dedicated Image API streaming, non-PNG media types, and displaying every image returned by multi-output generations.
-- Updated request snapshots, pricing labels, documentation, and release metadata for the unified Image API.
+- Added OpenRouter's dedicated Image API for discovered models while retaining chat completions for legacy models.
+- Added model-aware output count, format, compression, seed, and reference-image limits.
+- Added Image API streaming, non-PNG formats, and multi-output display.
+- Updated request snapshots, pricing labels, documentation, and release metadata for the Image API.
 
 ## v1.9.2 (2026-07-18)
 
-### Fixes
+### Fixed
 
-- Updated the build check to use TypeScript 7's native preview compiler through `svelte-check`'s supported `--tsgo-experimental-api` integration, while retaining TypeScript 6 only for the currently published Svelte language-tools API bridge. This prevents the TypeScript 7 module-export crash and keeps the production build on the current compiler line.
+- Switched the build check to TypeScript 7's native preview through the supported `svelte-check` integration, retaining TypeScript 6 for the language-tools bridge.
 
 ## v1.9.1 (2026-07-18)
 
-### Fixes
+### Fixed
 
-- Upgraded the Svelte/Vite toolchain and TypeScript together so `svelte-check` supports the current TypeScript 6 release without the previous compatibility crash.
+- Upgraded Svelte, Vite, and TypeScript together to support TypeScript 6 in `svelte-check`.
 
 ## v1.9.0 (2026-07-10)
 
-### Features
+### Added
 
-- Prompt Board notes can now have editable name labels, making saved prompt snippets easier to identify at a glance. Existing notes remain compatible and can be named as needed.
-- Completed sketches now offer separate re-run and refinement-fork icons. Choose a multiplier from one to four to create that many re-run or refinement branches; refinement forks create sibling rows with the source prompt and settings copied into editable drafts, including immediately from an unfinished refinement, so multiple variations can be prepared from the same completed image.
-- Forked drafts inherit the source card's prompt, attachment checkboxes, aspect ratio, image size, quality, background, streaming, and reasoning settings. This applies to both re-run forks and refinement forks, including branches made from an unfinished refinement.
-- Increased the default Prompt Board card size to provide more room for prompt names and text.
+- Added editable names to Prompt Board notes.
+- Added separate rerun and refinement forks for completed sketches, with 1–4 branches per action and editable inherited drafts.
+- Preserved prompts, attachments, and generation settings in rerun and refinement forks, including forks from unfinished refinements.
+- Increased the default Prompt Board card size.
 
 ## v1.8.0 (2026-07-04)
 
-### Features
+### Added
 
-- Collapsible "Style & References" / "Prompt Board" section headers now show a hover background, matching the affordance every other interactive control in the app already has.
-- Added a page footer (new `Footer.svelte`, a proper `<footer>` landmark) with a short privacy note ("runs entirely in your browser — prompts, images, and your API key stay on this device") and a link to the GitHub repo, plus the current version number. Added a second, icon-only GitHub link in the header for visibility without scrolling.
+- Added hover backgrounds to collapsible section headers.
+- Added a footer with a privacy note, repository link, and app version; added a header GitHub link.
 
-### Fixes
+### Fixed
 
-- The loading screen (shown before the board finishes initializing) had no `<main>` landmark at all, temporarily breaking the skip-link's target and the page's landmark structure. `<main id="main-content">` now always exists; the ready/loading branches render inside it instead of replacing it.
+- Kept the main landmark present during loading so the skip link always had a target.
 
 ## v1.7.1 (2026-07-04)
 
-### Fixes
+### Fixed
 
-- Corrected the "Stream" checkbox added in v1.7.0, after live-testing against the real API disproved its two premises: (1) the "+$" cost-warning badge implied streaming itself adds cost — live testing (with and without an OpenAI `partial_images` parameter, which OpenRouter's `/chat/completions` silently ignores for this model) showed no cost difference, so the badge was removed; (2) the checkbox's hint promised a live partial-image preview, but OpenAI's GPT image models send the finished image as a single chunk right at the end of generation via this API surface regardless of `stream`/`partial_images` — there's no incremental data to preview. The checkbox's hint now describes its one confirmed real benefit: streamed requests can be cancelled server-side (stopping billing immediately when a generating card is trashed), per [OpenRouter's stream cancellation docs](https://openrouter.ai/docs/api/reference/streaming) (OpenAI is a supported provider); non-streaming requests keep billing to completion even if the client aborts.
+- Removed the unsupported streaming cost warning and corrected the preview hint after testing showed that image previews arrived only at completion. Clarified that cancelling a request may not prevent billing.
 
 ## v1.7.0 (2026-07-04)
 
-### Features
+### Added
 
-- Added a "Stream" checkbox in `ResolutionControls` for models OpenRouter's image model discovery marks `supports_streaming: true` for (currently OpenAI's GPT image models). Checking it sends the generation request with `stream: true` over SSE instead of a single buffered response, and shows a live partial-image preview in place of the usual skeleton while a sketch is generating. The checkbox carries a "+$" badge (with an adjacent text hint, not color-only) warning that streaming may add provider cost for partial frames, per [OpenAI's docs on partial-image streaming cost](https://developers.openai.com/api/docs/guides/image-generation). Note: OpenRouter documents the general chat-completions SSE chunk format for text (`delta.content`) but not the exact shape of image deltas specifically — this best-effort-reads a `delta.images[]` field per chunk for the live preview; if a provider never populates it, streaming still completes correctly, it just won't show partial previews. New `Sketch.streamEnabled` field (additive) carries the choice through generation, refinement, and forking.
+- Added opt-in streaming for models advertising support, including best-effort partial previews; persisted the setting across generation, refinement, and forks.
 
 ## v1.6.2 (2026-07-04)
 
-### Fixes
+### Fixed
 
-- OpenAI's GPT image models (`gpt-5-image`, `gpt-5-image-mini`, `gpt-5.4-image-2`) stopped exposing the Aspect/Size controls once model capabilities started coming from OpenRouter's real Image API discovery data. That discovery endpoint describes OpenRouter's separate, stateless _dedicated Image API_ surface, not the `/chat/completions`-based conversational image generation this app actually uses — these three models generate images through an LLM tool call (per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/): "GPT 5 and 5.4 versions generate images through an LLM, so they don't provide access to the full set of supported parameters") and never supported aspect_ratio/resolution there in the first place. Restored the Aspect/Size controls for exactly these three models (independent of what discovery reports), and added Quality/Background selects (which discovery _does_ confirm for them) so `ResolutionControls` now renders each control independently based on what a model actually supports, rather than assuming every model has all of them. New `Sketch.quality`/`Sketch.background` fields (nullable, additive) carry the choice through generation, refinement, and forking.
+- Restored aspect-ratio and size controls for GPT image models using chat completions; added their supported quality and background controls based on OpenRouter discovery.
 
 ## v1.6.1 (2026-07-03)
 
-### Fixes
+### Changed
 
-- Miscellaneous code and documentation updates and cleanups
+- Updated code and documentation.
 
 ## v1.6.0 (2026-07-03)
 
-### Features
+### Added
 
-- Prompt Board notes can now be "sent to" models: a new send button on each note opens a dialog listing every image model (grouped by creator, with pricing and cost-tier badges, filterable, with a Clear-selection button). Confirming creates one new chain per checked model, each pre-filled with the note's text as an editable DRAFT sketch — so aspect ratio, image size, and model choice can still be adjusted per chain before the user explicitly clicks Generate.
+- Added a dialog for sending Prompt Board notes to selected image models as editable draft chains.
 
 ## v1.5.0 (2026-07-03)
 
-### Features
+### Added
 
-- Added a "Prompt Board" shelf (collapsible, like Style & References): a horizontal row of sticky notes with free-text boxes for drafting/copying prompt snippets. Add as many as needed via the dashed "+ Add Note" card; each note has a copy-to-clipboard and remove button. Notes persist in board settings (`BoardSettings.promptNotes`).
+- Added a persistent Prompt Board for drafting, copying, naming, and deleting prompt notes.
 
 ## v1.4.0 (2026-07-03)
 
-### Features
+### Added
 
-- Redesigned the model picker: dropped the pinned/suggested-models shortlist (all image models are shown), grouped models by creator (Google, OpenAI, Black Forest Labs, etc.) with a divider between each group, and added runtime-fetched inline pricing per the [Pricing Object](https://openrouter.ai/docs/guides/overview/models#pricing-object) (per-1M-token, per-image, and per-request rates, whichever apply to the model, with redundant trailing zeros trimmed), plus a small $/$$/$$$ relative-cost badge per model. Genuinely free (`:free`-suffixed) models are labeled "Free" instead of the ambiguous "pricing not listed" shown for models whose cost isn't captured by these fields at all. The "New Sketch" composer card is wider so the full pricing text isn't clipped.
+- Replaced the model shortlist with all image models grouped by creator; added live pricing, relative-cost labels, and room for full pricing details.
 
 ## v1.3.0 (2026-07-03)
 
-### Features
+### Added
 
-- Improved error handling per [OpenRouter's errors-and-debugging reference](https://openrouter.ai/docs/api/reference/errors-and-debugging): typed `error_type` codes (rate limits, content policy, image errors, context length, etc.) are mapped to plain-language messages, including `Retry-After` hints. In-band provider errors (HTTP 200 with `choices[0].error`, e.g. mid-generation provider failures) are now detected and surfaced instead of a generic "no image returned" message. Error cards get a "View raw response" toggle showing the pretty-printed raw API error body, with copy-to-clipboard.
+- Added typed OpenRouter error messages, including retry hints, and surfaced in-band provider errors.
+- Added a copyable raw-response view to error cards.
 
 ## v1.2.0 (2026-07-03)
 
-### Features
+### Added
 
-- Model capabilities (aspect ratios, image sizes, max input reference images) are now resolved from OpenRouter's dedicated Image API discovery endpoint (`GET /api/v1/images/models`) instead of hand-guessed overrides, per [OpenRouter's Unified Image API announcement](https://openrouter.ai/blog/announcements/image-api/). Generation still goes through `/chat/completions`; only capability discovery changed. Falls back to conservative defaults (marked "estimated") if the discovery fetch fails.
+- Loaded model capabilities from OpenRouter's Image API discovery endpoint and used conservative estimated defaults when discovery failed.
 
 ## v1.1.0 (2026-07-03)
 
-### Features
+### Added
 
-- Add support for optional reasoning effort on the `openai/gpt-5.4-image-2` model. Resolution controls expose a Reasoning selector; sketch updates persist the value, and sketch creation/refinement/forking carry it forward.
+- Added optional reasoning-effort controls for `openai/gpt-5.4-image-2` and preserved the setting across sketch creation, refinement, and forks.
 
 ## v1.0.0 (2026-06-21)
 
-### Features
+### Added
 
-- Initial release!
-- Sticky-note board with dark/light themes (WCAG 2.2 AA)
-- Dynamic model picker: fetches all image-capable models from OpenRouter; pins common defaults, expandable full list with filter
-- Chain-locked model: each row locks to one model; per-card model deferred
-- Global style document, style reference image, and layout reference image with per-sketch attachment checkboxes
-- Conversational refinement for reasoning models; image-to-image fallback for image-only models with warning
-- View source (`</>`) per card: elides image base64, redacts API key, copy-to-clipboard
-- Cascade trash with pending-trash preview and confirm; fork (Refresh) to a new row with shared ancestor images
-- Model-aware resolution controls (aspect ratio + image size)
-- Cost tracking: estimated + actual per sketch, chain totals, session total, configurable caps (session + per-chain)
-- Concurrency-capped queue with AbortController cancellation on trash
-- IndexedDB persistence: images stored as Blobs, refcounted across forks
-- API key in sessionStorage (default) or localStorage (opt-in with danger warning)
+- Released the sticky-note image-generation board with dark and light themes.
+- Added a dynamic OpenRouter image-model picker with common defaults, pinning, and filtering.
+- Locked each sketch chain to one model.
+- Added global style guidance and style/layout reference images with per-sketch attachment controls.
+- Added conversational refinements and image-to-image fallback for models without conversational support.
+- Added a source view that redacted API keys and omitted image data.
+- Added cascade deletion, editable forks, and shared ancestor images.
+- Added model-aware aspect-ratio and image-size controls.
+- Added estimated and actual cost tracking with session and chain limits.
+- Added a concurrency-limited generation queue with cancellation on deletion.
+- Persisted boards and refcounted image blobs in IndexedDB.
+- Stored API keys in session storage by default, with opt-in local storage.

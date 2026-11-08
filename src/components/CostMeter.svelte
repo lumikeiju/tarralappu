@@ -5,20 +5,45 @@
 
     const cap = $derived(boardState.board?.settings.sessionCostCapUsd ?? null);
     const total = $derived(getSessionCostTotal());
+    const hasUnreportedCosts = $derived(
+        !!boardState.board?.styleGuideUnreportedCosts ||
+            !!boardState.board?.randomPromptUnreportedCosts ||
+            boardState.sketches.some((sketch) => sketch.costUnreported)
+    );
     const pct = $derived(
         cap !== null && cap > 0 ? Math.min(1, total / cap) * 100 : 0
     );
     const nearCap = $derived(cap !== null && pct >= 80);
 </script>
 
-<div class="cost-meter" aria-label="Session cost">
+<div
+    class="cost-meter"
+    aria-label="Session cost"
+    title="Includes retained sketches and Random text. Deleting a sketch removes its image-generation charges; Random costs remain."
+>
     <span class="cost-label">Session</span>
+    <span class="sr-only">
+        Includes retained sketches and Random text. Deleting a sketch removes
+        its image-generation charges; Random costs remain.
+    </span>
     <span class="cost-value" class:near-cap={nearCap}>
         {formatUsd(total)}
         {#if cap !== null}
             <span class="cost-cap">/ {formatUsd(cap)}</span>
         {/if}
     </span>
+    {#if hasUnreportedCosts}
+        <span
+            class="cost-unreported"
+            role="status"
+            title="Some charges may be unreported. Check OpenRouter for the full cost."
+        >
+            Incomplete<span class="sr-only"
+                >: some charges may be unreported. Check OpenRouter for the full
+                cost.</span
+            >
+        </span>
+    {/if}
     {#if cap !== null}
         <div
             class="cost-bar"
@@ -65,6 +90,10 @@
     .cost-cap {
         color: var(--clr-text-3);
         font-weight: 400;
+    }
+    .cost-unreported {
+        color: var(--clr-warning);
+        font-weight: 600;
     }
     .cost-bar {
         width: 72px;

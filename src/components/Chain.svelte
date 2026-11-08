@@ -22,6 +22,8 @@
 
     let cardsRow = $state<HTMLDivElement>();
     let refineBtn = $state<HTMLButtonElement>();
+    let refining = $state(false);
+    let refineError = $state("");
 
     // Trash state: which order index triggered the pending-trash
     let pendingTrashFrom = $state<number | null>(null);
@@ -55,10 +57,19 @@
     }
 
     async function addRefinement() {
-        if (!lastSketch) return;
-        const draft = await createRefinementSketch(lastSketch.id);
-        await tick();
-        document.getElementById(`prompt-${draft.id}`)?.focus();
+        if (!lastSketch || refining) return;
+        refining = true;
+        refineError = "";
+        try {
+            const draft = await createRefinementSketch(lastSketch.id);
+            await tick();
+            document.getElementById(`prompt-${draft.id}`)?.focus();
+        } catch (error) {
+            refineError =
+                error instanceof Error ? error.message : String(error);
+        } finally {
+            refining = false;
+        }
     }
 
     let capInput = $state("");
@@ -171,6 +182,7 @@
                     bind:this={refineBtn}
                     onclick={addRefinement}
                     aria-label="Add refinement sketch"
+                    disabled={refining}
                 >
                     <span class="ghost-plus" aria-hidden="true">+</span>
                     <span class="ghost-label">Refine</span>
@@ -178,6 +190,7 @@
             </div>
         {/if}
     </div>
+    {#if refineError}<p class="refine-error" role="alert">{refineError}</p>{/if}
 </div>
 
 <style>
@@ -221,6 +234,10 @@
     .fork-badge {
         font-size: 0.75rem;
         color: var(--clr-text-3);
+    }
+    .refine-error {
+        color: var(--clr-danger);
+        font-size: 0.8125rem;
     }
     .chain-cost {
         display: flex;

@@ -12,6 +12,7 @@ import type {
   SketchRequestSnapshot
 } from "../db/schema";
 import { effectiveOption, supportsReasoningEffort } from "./capabilities";
+import { effectiveInputImages, imageRequestOptions } from "./options";
 
 export interface ComposeInput {
   sketch: Sketch;
@@ -77,6 +78,7 @@ async function buildUserMessage(opts: {
   conversational: boolean;
   isRefinement: boolean;
   getImageBase64: (id: ID) => Promise<string>;
+  loadImages?: boolean;
 }): Promise<{ parts: ContentPart[]; imageRefs: ID[]; text: string }> {
   const {
     prompt,
@@ -121,15 +123,19 @@ async function buildUserMessage(opts: {
 
   // Style ref image (before layout ref to match labels)
   if (attach.styleRef && boardSettings.styleRefImageId) {
-    const b64 = await getImageBase64(boardSettings.styleRefImageId);
     imageRefs.push(boardSettings.styleRefImageId);
-    imageParts.push({ type: "image_url", image_url: { url: b64 } });
+    if (opts.loadImages !== false) {
+      const b64 = await getImageBase64(boardSettings.styleRefImageId);
+      imageParts.push({ type: "image_url", image_url: { url: b64 } });
+    }
   }
   // Layout ref image
   if (attach.layoutRef && boardSettings.layoutRefImageId) {
-    const b64 = await getImageBase64(boardSettings.layoutRefImageId);
     imageRefs.push(boardSettings.layoutRefImageId);
-    imageParts.push({ type: "image_url", image_url: { url: b64 } });
+    if (opts.loadImages !== false) {
+      const b64 = await getImageBase64(boardSettings.layoutRefImageId);
+      imageParts.push({ type: "image_url", image_url: { url: b64 } });
+    }
   }
 
   const parts: ContentPart[] = [{ type: "text", text }, ...imageParts];
@@ -166,16 +172,22 @@ function truncateHistoryToFitCap(
 }
 
 function buildImageApiLabels(
-  parentImageCount: number,
+  sourceImageIds: ID[],
+  parentImageIds: ID[],
   attach: Sketch["attach"],
-  boardSettings: BoardSettings
+  boardSettings: BoardSettings,
+  baseImageId?: ID | null
 ): string {
   const lines: string[] = [];
   let index = 0;
-  for (let i = 0; i < parentImageCount; i++) {
+  for (const id of sourceImageIds) {
     index++;
     lines.push(
-      `The ${ordinal(index)} attached image is a PREVIOUS GENERATED OUTPUT — use it as the image to edit.`
+      id === baseImageId
+        ? `The ${ordinal(index)} attached image is the BASE IMAGE — use it as the starting point for this edit.`
+        : parentImageIds.includes(id)
+          ? `The ${ordinal(index)} attached image is a PREVIOUS GENERATED OUTPUT — use it as the image to edit.`
+          : `The ${ordinal(index)} attached image is a SUBJECT REFERENCE — use its details as directed by the request.`
     );
   }
   if (attach.styleRef && boardSettings.styleRefImageId) {
@@ -202,82 +214,75 @@ async function composeImageApiRequest(
     ? chainSketches.find((s) => s.id === sketch.parentSketchId)
     : undefined;
   const parentImageIds = parent?.resultImageIds ?? [];
+  const sourceImageIds = effectiveInputImages(sketch, parentImageIds);
+  const baseImageId = sketch.editSourceImageId ?? sketch.markup?.baseImageId;
+  const settingsImageIds = [
+    ...(sketch.attach.styleRef && boardSettings.styleRefImageId
+      ? [boardSettings.styleRefImageId]
+      : []),
+    ...(sketch.attach.layoutRef && boardSettings.layoutRefImageId
+      ? [boardSettings.layoutRefImageId]
+      : [])
+  ];
+  const imageRefs = [...sourceImageIds, ...settingsImageIds];
+  if (
+    imageRefs.length < capabilities.minInputImages ||
+    imageRefs.length > capabilities.maxInputImages
+  ) {
+    throw new Error(
+      `This model accepts ${capabilities.minInputImages}-${capabilities.maxInputImages} input images; ${imageRefs.length} are selected.`
+    );
+  }
   const built = await buildUserMessage({
     prompt: sketch.prompt,
     attach: sketch.attach,
     boardSettings,
     conversational: false,
     isRefinement: parent !== undefined,
-    getImageBase64
+    getImageBase64,
+    loadImages: false
   });
   const promptParts = [
-    parentImageIds.length > 0
+    !baseImageId && sourceImageIds.some((id) => parentImageIds.includes(id))
       ? "[PREVIOUS OUTPUTS]\nUse the attached previous output images as the starting point for this edit."
       : "",
-    buildImageApiLabels(parentImageIds.length, sketch.attach, boardSettings),
+    buildImageApiLabels(
+      sourceImageIds,
+      parentImageIds,
+      sketch.attach,
+      boardSettings,
+      baseImageId
+    ),
     built.text
   ].filter(Boolean);
   const prompt = promptParts.join("\n\n");
-  const imageRefs = [...parentImageIds, ...built.imageRefs];
+  if (prompt.length > 32_000)
+    throw new Error(
+      "The composed prompt, including style context and reference labels, exceeds 32,000 characters."
+    );
 
   const body: ImageGenerationRequest = {
     model: sketch.modelId,
     prompt,
-    stream: capabilities.supportsStreaming && sketch.streamEnabled
+    ...imageRequestOptions(sketch, capabilities, imageRefs.length > 0)
   };
-  const requestedOutputCount =
-    typeof sketch.outputCount === "number" &&
-    Number.isFinite(sketch.outputCount)
-      ? Math.trunc(sketch.outputCount)
-      : 1;
-  const outputCount = Math.max(
-    1,
-    Math.min(requestedOutputCount, capabilities.maxOutputs)
-  );
-  if (capabilities.maxOutputs > 1 && outputCount > 1) body.n = outputCount;
-  const aspectRatio = effectiveOption(
-    sketch.aspectRatio,
-    capabilities.aspectRatios
-  );
-  if (aspectRatio) body.aspect_ratio = aspectRatio;
-  const resolution = effectiveOption(sketch.imageSize, capabilities.imageSizes);
-  if (resolution) body.resolution = resolution;
-  const quality = effectiveOption(
-    sketch.quality ?? "auto",
-    capabilities.quality
-  );
-  if (quality) body.quality = quality;
-  if (
-    sketch.outputFormat &&
-    capabilities.outputFormats.includes(sketch.outputFormat)
-  ) {
-    body.output_format = sketch.outputFormat;
-  }
-  const background = effectiveOption(
-    sketch.background ?? "auto",
-    capabilities.background
-  );
-  if (background) body.background = background;
-  if (
-    capabilities.outputCompression &&
-    typeof sketch.outputCompression === "number" &&
-    Number.isFinite(sketch.outputCompression)
-  ) {
-    body.output_compression = Math.min(
-      capabilities.outputCompression.max,
-      Math.max(
-        capabilities.outputCompression.min,
-        Math.trunc(sketch.outputCompression)
-      )
-    );
-  }
-  if (
-    capabilities.supportsSeed &&
-    typeof sketch.seed === "number" &&
-    Number.isSafeInteger(sketch.seed) &&
-    sketch.seed >= 0
-  ) {
-    body.seed = sketch.seed;
+  if (sketch.markup) {
+    if (!capabilities.advanced.markup)
+      throw new Error(
+        "Markup edits are not confirmed by this OpenRouter endpoint."
+      );
+    if (body.output_format === "gif")
+      throw new Error(
+        "GIF with markup is not confirmed by this OpenRouter endpoint."
+      );
+    if (imageRefs[0] !== sketch.markup.baseImageId)
+      throw new Error(
+        "Markup must match the first input image. Select its original base image."
+      );
+    body.markup = {
+      type: "image_url",
+      image_url: { url: await getImageBase64(sketch.markup.imageId) }
+    };
   }
   if (imageRefs.length > 0) {
     const inputReferences = [];
@@ -306,6 +311,18 @@ async function composeImageApiRequest(
       ? { output_compression: body.output_compression }
       : {}),
     ...(body.seed !== undefined ? { seed: body.seed } : {}),
+    ...(body.size ? { size: body.size } : {}),
+    ...(body.frame_count !== undefined
+      ? { frame_count: body.frame_count }
+      : {}),
+    ...(body.frame_duration_ms !== undefined
+      ? { frame_duration_ms: body.frame_duration_ms }
+      : {}),
+    ...(body.partial_images !== undefined
+      ? { partial_images: body.partial_images }
+      : {}),
+    ...(body.provider ? { provider: body.provider } : {}),
+    ...(sketch.markup ? { markupImageId: sketch.markup.imageId } : {}),
     stream: body.stream,
     imageRefs
   };
@@ -445,6 +462,7 @@ export async function composeRequest(
     finalMessages = truncateHistoryToFitCap(messages, maxInputImages);
   }
   const inputImageCount = countImages(finalMessages);
+  const sentMessages = new Set(finalMessages);
 
   const streamRequested =
     capabilities.supportsStreaming && sketch.streamEnabled;
@@ -492,7 +510,9 @@ export async function composeRequest(
     image_config: body.image_config,
     ...(body.reasoning ? { reasoning: body.reasoning } : {}),
     stream: streamRequested,
-    messages: snapshotMessages
+    messages: snapshotMessages.filter((_, index) =>
+      sentMessages.has(messages[index]!)
+    )
   };
 
   return { body, generationApi: "chat", snapshot, inputImageCount };
@@ -518,6 +538,27 @@ export function elidedRequestJson(snapshot: SketchRequestSnapshot): string {
           ? { output_compression: request.output_compression }
           : {}),
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
+        ...(request.size ? { size: request.size } : {}),
+        ...(request.frame_count !== undefined
+          ? { frame_count: request.frame_count }
+          : {}),
+        ...(request.frame_duration_ms !== undefined
+          ? { frame_duration_ms: request.frame_duration_ms }
+          : {}),
+        ...(request.partial_images !== undefined
+          ? { partial_images: request.partial_images }
+          : {}),
+        ...(request.provider ? { provider: request.provider } : {}),
+        ...(request.markupImageId
+          ? {
+              markup: {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,\u2026<imageId=${request.markupImageId}>`
+                }
+              }
+            }
+          : {}),
         ...(request.imageRefs.length > 0
           ? {
               input_references: request.imageRefs.map((id) => ({

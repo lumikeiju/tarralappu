@@ -1,7 +1,8 @@
 import type {
   ModelCapabilities,
   ModelPricing,
-  CompletionResponse
+  CompletionResponse,
+  CompletionUsage
 } from "./types";
 
 /**
@@ -12,8 +13,27 @@ import type {
  */
 export function estimateCost(
   capabilities: ModelCapabilities,
-  inputImageCount: number
+  inputImageCount: number,
+  outputCount = 1
 ): number | null {
+  if (capabilities.id.endsWith(":free")) return 0;
+  const lines = capabilities.advanced.endpoint?.pricing;
+  if (lines) {
+    if (lines.some((line) => line.unit !== "image" || line.variant))
+      return null;
+    const estimate = lines.reduce(
+      (sum, line) =>
+        sum +
+        line.cost_usd *
+          (line.billable === "output_image"
+            ? outputCount
+            : line.billable === "input_image"
+              ? inputImageCount
+              : 0),
+      0
+    );
+    return Number.isFinite(estimate) && estimate > 0 ? estimate : null;
+  }
   const { pricing } = capabilities;
   const imageCost = parseFloat(pricing?.image ?? "0");
   const requestCost = parseFloat(pricing?.request ?? "0");
@@ -28,22 +48,34 @@ export function estimateCost(
 export function parseCostFromResponse(
   response: CompletionResponse
 ): number | null {
-  if (!response.usage) return null;
-  const u = response.usage as Record<string, unknown>;
-  const cost = u["total_cost"] ?? u["cost"];
-  if (typeof cost === "number" && cost >= 0) return cost;
+  return parseCostFromUsage(response.usage);
+}
+
+export function parseCostFromUsage(
+  usage: CompletionUsage | undefined
+): number | null {
+  const cost = usage?.total_cost ?? usage?.cost;
+  if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0)
+    return cost;
   return null;
+}
+
+export function addKnownCost(
+  previous: number | null,
+  attempt: number | null
+): number | null {
+  return attempt === null ? previous : (previous ?? 0) + attempt;
 }
 
 export function formatUsd(usd: number): string {
   if (usd === 0) return "$0.00";
+  if (usd > 0 && usd < 0.00001) return "<$0.00001";
   let fixed: string;
   if (usd < 0.001) fixed = usd.toFixed(5);
   else if (usd < 0.01) fixed = usd.toFixed(4);
   else if (usd < 1) fixed = usd.toFixed(3);
   else fixed = usd.toFixed(2);
-  // Trim redundant trailing zeros ("$12.00" -> "$12", "$0.250" -> "$0.25")
-  // without collapsing an all-zero fraction produced above (usd !== 0 here).
+  // Trim redundant trailing zeros ("$12.00" -> "$12", "$0.250" -> "$0.25").
   if (fixed.includes(".")) {
     fixed = fixed.replace(/0+$/, "").replace(/\.$/, "");
   }

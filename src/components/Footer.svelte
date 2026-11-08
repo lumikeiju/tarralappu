@@ -4,8 +4,16 @@
 
 <footer class="app-footer">
     <p class="app-footer__note">
-        This image generation harness is open-source and runs entirely
-        in-browser!
+        This image generation harness is
+        <a
+            href="https://github.com/lumikeiju/tarralappu"
+            target="_blank"
+            rel="noopener noreferrer"
+            >open-source<span class="sr-only">
+                (view Tarralappu on GitHub; opens in a new tab)</span
+            ></a
+        >
+        and runs entirely in-browser!
     </p>
     <div class="app-footer__links">
         <span class="app-footer__version">v{pkg.version}</span>
@@ -65,10 +73,14 @@
         color: var(--clr-text-3);
     }
     .app-footer__note {
-        display: flex;
-        align-items: center;
-        gap: 6px;
         max-width: 62ch;
+    }
+    .app-footer__note a {
+        color: var(--clr-text-2);
+        text-decoration: underline;
+    }
+    .app-footer__note a:hover {
+        color: var(--clr-text);
     }
     .app-footer__links {
         display: flex;
