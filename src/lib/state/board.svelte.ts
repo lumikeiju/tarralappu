@@ -74,7 +74,8 @@ import {
 } from "../openrouter/styleGuide";
 import {
   requestRandomPrompt,
-  completedRandomPrompt
+  completedRandomPrompt,
+  completedPromptBoardEntry
 } from "../openrouter/randomPrompt";
 import {
   copyGenerationSettings,
@@ -308,7 +309,6 @@ export async function updateBoardSettings(
 
 type RandomTextOptions = {
   signal?: AbortSignal;
-  budgetAcknowledged?: boolean;
 };
 
 async function resolveAttemptCost(
@@ -361,11 +361,6 @@ async function generateRandomText(
       "The session cap is reached, including in-flight estimates. Increase it before using Random."
     );
   }
-  if (cap !== null && !options.budgetAcknowledged) {
-    throw new Error(
-      "Random has no reliable pre-send estimate. Acknowledge the budget limitation before generating."
-    );
-  }
   const costKey =
     target.kind === "styleGuide" ? "styleGuideCostUsd" : "randomPromptCostUsd";
   const unknownCostKey =
@@ -401,7 +396,11 @@ async function generateRandomText(
         : await requestRandomPrompt(
             apiKey,
             options.signal,
-            targetSketch?.parentSketchId ? "refinement" : "generation"
+            target.kind === "prompt"
+              ? "promptBoard"
+              : targetSketch?.parentSketchId
+                ? "refinement"
+                : "generation"
           );
     const costUsd = await recordRandomCost(response, board, apiKey);
     options.signal?.throwIfAborted();
@@ -430,18 +429,15 @@ async function generateRandomText(
           "The sketch was removed or changed before Random completed. Its prompt was not replaced."
         );
       }
-      const previous = {
-        prompt: sketch.prompt,
-        budgetAcknowledged: sketch.budgetAcknowledged
-      };
+      const previousPrompt = sketch.prompt;
       try {
         await updateSketch(sketch.id, { prompt });
       } catch (error) {
-        if (sketch.prompt === prompt) Object.assign(sketch, previous);
+        if (sketch.prompt === prompt) sketch.prompt = previousPrompt;
         throw error;
       }
     } else {
-      const text = completedRandomPrompt(response);
+      const { name, prompt: text } = completedPromptBoardEntry(response);
       const note = board.settings.promptNotes?.find(
         (note) => note.id === target.noteId
       );
@@ -451,10 +447,18 @@ async function generateRandomText(
         );
       }
       const previous = note.text;
+      const previousName = note.name;
+      const updates = {
+        text,
+        ...(!note.name.trim() ? { name } : {})
+      };
       try {
-        await updatePromptNote(target.noteId, { text });
+        await updatePromptNote(target.noteId, updates);
       } catch (error) {
-        if (note.text === text) note.text = previous;
+        if (note.text === text) {
+          note.text = previous;
+          note.name = previousName;
+        }
         throw error;
       }
     }
@@ -556,9 +560,22 @@ export async function sendPromptToModels(
   prompt: string,
   modelIds: string[]
 ): Promise<void> {
-  for (const modelId of modelIds) {
-    const chain = await createChain(modelId);
-    await createRootSketch(chain.id, prompt, modelId);
+  await sendPromptsToModels([prompt], modelIds);
+}
+
+/**
+ * Create one draft for each prompt/model combination, preserving prompt and
+ * model order so all selected prompts share the same model choices.
+ */
+export async function sendPromptsToModels(
+  prompts: string[],
+  modelIds: string[]
+): Promise<void> {
+  for (const prompt of prompts) {
+    for (const modelId of modelIds) {
+      const chain = await createChain(modelId);
+      await createRootSketch(chain.id, prompt, modelId);
+    }
   }
 }
 
@@ -622,7 +639,6 @@ export async function createRootSketch(
     imageOptions: {},
     referenceImageIds: [],
     editSourceImageId: null,
-    budgetAcknowledged: false,
     status: "draft",
     error: null,
     errorRaw: null,
@@ -688,33 +704,6 @@ export async function updateSketch(
 ): Promise<void> {
   const sketch = boardState.sketches.find((s) => s.id === sketchId);
   if (!sketch) return;
-  const generationKeys: (keyof Sketch)[] = [
-    "prompt",
-    "attach",
-    "aspectRatio",
-    "imageSize",
-    "quality",
-    "background",
-    "outputCount",
-    "outputFormat",
-    "outputCompression",
-    "seed",
-    "streamEnabled",
-    "reasoningEffort",
-    "imageOptions",
-    "referenceImageIds",
-    "editSourceImageId",
-    "markup"
-  ];
-  if (
-    generationKeys.some(
-      (key) =>
-        key in updates &&
-        JSON.stringify(updates[key]) !== JSON.stringify(sketch[key])
-    )
-  ) {
-    sketch.budgetAcknowledged = false;
-  }
   Object.assign(sketch, updates);
   // JSON roundtrip strips Svelte 5 reactive proxies before IDB serialization
   await saveSketch(JSON.parse(JSON.stringify(sketch)));
@@ -1046,15 +1035,6 @@ async function runGeneration(
     ) {
       throw new Error(
         "The cost cap is already reached, including in-flight estimates. Increase it before generating."
-      );
-    }
-    if (
-      estimate === null &&
-      (sessionCap !== null || chainCap !== null) &&
-      !sketch.budgetAcknowledged
-    ) {
-      throw new Error(
-        "This token-billed request has no reliable pre-send estimate. Acknowledge the budget limitation before generating; use an OpenRouter key spending limit for a hard cap."
       );
     }
     if (estimate !== null) {

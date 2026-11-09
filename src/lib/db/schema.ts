@@ -124,7 +124,6 @@ export interface Sketch {
   referenceImageIds?: ID[];
   editSourceImageId?: ID | null;
   markup?: { imageId: ID; baseImageId: ID };
-  budgetAcknowledged?: boolean;
   generationId?: string;
   resultMetadata?: CompletionResponse["imageMetadata"];
   resultWarning?: string | null;

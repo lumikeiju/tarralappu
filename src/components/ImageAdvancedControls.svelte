@@ -10,13 +10,11 @@
     const {
         sketch,
         capabilities,
-        hasCostCap,
         unknownEstimate,
         onChange
     }: {
         sketch: Sketch;
         capabilities: ModelCapabilities | undefined;
-        hasCostCap: boolean;
         unknownEstimate: boolean;
         onChange: (updates: Partial<Sketch>) => Promise<void>;
     } = $props();
@@ -240,23 +238,10 @@
 {#if unknownEstimate && capabilities?.generationApi === "images"}
     <p class="budget-hint" id="{uid}-budget">
         Cost estimate unavailable for this request. Quality, size, references,
-        outputs, and animation can change the bill. Local caps are not hard
-        spending limits; use an OpenRouter key spending limit.
+        outputs, and animation can change the bill. A local cap cannot prevent
+        an unknown-cost request from exceeding it; use an OpenRouter key
+        spending limit.
     </p>
-    {#if hasCostCap}
-        <label class="budget-ack">
-            <input
-                type="checkbox"
-                checked={sketch.budgetAcknowledged ?? false}
-                aria-describedby="{uid}-budget"
-                onchange={(event) =>
-                    void change({
-                        budgetAcknowledged: event.currentTarget.checked
-                    })}
-            />
-            I understand this request cannot be reliably pre-estimated.
-        </label>
-    {/if}
 {/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -290,10 +275,6 @@
     }
     ul {
         padding-left: 18px;
-    }
-    .budget-ack {
-        font-size: 0.8125rem;
-        align-items: start;
     }
     .error {
         color: var(--clr-danger);

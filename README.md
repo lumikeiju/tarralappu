@@ -3,6 +3,10 @@
 # Tarralappu
 
 <p align="center">
+  <img src="src/assets/screenshot-dark.avif" alt="Tarralappu's dark-theme image-generation workspace" width="100%" />
+</p>
+
+<p align="center">
   <strong>A sticky-note workspace for exploring AI image generation.</strong><br />
   Build prompts, compare models, and grow images through branching refinements — right in your browser.
 </p>

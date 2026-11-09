@@ -1,6 +1,6 @@
 {
   "name": "tarralappu",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Local harness for AI image generation via OpenRouter with a sticky-note theme.",

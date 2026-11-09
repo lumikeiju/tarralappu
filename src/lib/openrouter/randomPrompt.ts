@@ -187,10 +187,12 @@ function drawIngredient(axis: keyof typeof ingredients, count = 1): string {
 export function requestRandomPrompt(
   apiKey: string,
   signal?: AbortSignal,
-  kind: "generation" | "refinement" = "generation"
+  kind: "generation" | "refinement" | "promptBoard" = "generation"
 ): Promise<CompletionResponse> {
+  const promptBoard = kind === "promptBoard";
+  const refinement = kind === "refinement";
   const recipe = [
-    ...(kind === "generation"
+    ...(!refinement
       ? [
           `Subject: ${drawIngredient("subject")}`,
           `Setting: ${drawIngredient("setting")}`
@@ -206,15 +208,18 @@ export function requestRandomPrompt(
     [
       {
         role: "system",
-        content:
-          "Write vivid, original prompts for image generation. Follow the supplied randomized ingredients rather than replacing them with your usual favorite scene. Style clashes are welcome: do not smooth incompatible media into a harmonious or generic cinematic look. Return only one ready-to-use prompt as plain text, without a title, quotation marks, commentary, ingredient list, or alternatives."
+        content: promptBoard
+          ? "Write vivid, original prompts for image generation. Follow the supplied randomized ingredients rather than replacing them with your usual favorite scene. Style clashes are welcome: do not smooth incompatible media into a harmonious or generic cinematic look. Return exactly a concise, representative name of 2-5 words on the first line prefixed with 'Name: ', then 'Prompt:' on its own line, then one ready-to-use prompt. Do not add any other commentary or alternatives."
+          : "Write vivid, original prompts for image generation. Follow the supplied randomized ingredients rather than replacing them with your usual favorite scene. Style clashes are welcome: do not smooth incompatible media into a harmonious or generic cinematic look. Return only one ready-to-use prompt as plain text, without a title, quotation marks, commentary, ingredient list, or alternatives."
       },
       {
         role: "user",
         content: [
-          kind === "refinement"
+          refinement
             ? "Write image-editing instructions in 80-120 words for an existing image you cannot see, preserving the main subject and identity. Radically transform its visual treatment using every ingredient below, not just a subtle lighting or mood adjustment. Do not assume specific objects are present or claim to have seen the image."
-            : "Invent a distinctive image idea in 80-120 words using every ingredient below. Make the subject and setting concrete, even when their pairing is absurd. Make both rendering media visibly evident rather than quietly choosing only one.",
+            : promptBoard
+              ? "Invent a distinctive image idea in 80-120 words using every ingredient below. Make the subject and setting concrete, even when their pairing is absurd. Make both rendering media visibly evident rather than quietly choosing only one. Choose a very concise name that captures the central image idea."
+              : "Invent a distinctive image idea in 80-120 words using every ingredient below. Make the subject and setting concrete, even when their pairing is absurd. Make both rendering media visibly evident rather than quietly choosing only one.",
           "These locally randomized ingredients are requirements, not examples. Make clashes and surprising combinations visible. Explicitly describe the chosen media, palette, composition, lighting, and disruption. Do not default to dreamy miniature worlds, floating islands, cozy scenes, or cinematic fantasy unless the ingredients call for them. Do not reference a brand, copyrighted character, or living artist.",
           recipe
         ].join("\n\n")
@@ -227,4 +232,39 @@ export function requestRandomPrompt(
 
 export function completedRandomPrompt(response: CompletionResponse): string {
   return completedRandomText(response, "image prompt");
+}
+
+export function completedPromptBoardEntry(response: CompletionResponse): {
+  name: string;
+  prompt: string;
+} {
+  const text = completedRandomText(response, "image prompt");
+  const promptLabel = /^Prompt:\s*$/im.exec(text);
+  const header = promptLabel ? text.slice(0, promptLabel.index).trim() : "";
+  const labelledName = /^Name:\s*(.*)$/im.exec(header || text);
+  const prompt = promptLabel
+    ? text.slice(promptLabel.index + promptLabel[0].length).trim()
+    : labelledName
+      ? text.slice(labelledName.index + labelledName[0].length).trim() || text
+      : text;
+  if (!prompt || prompt.length > 32_000) {
+    throw new Error(
+      "OpenRouter did not return a complete prompt. Try Random again."
+    );
+  }
+
+  const titleCandidate =
+    labelledName?.[1]?.trim() ||
+    (promptLabel ? header.replace(/^#+\s*/, "").trim() : "") ||
+    prompt.split(/[.!?\n]/, 1)[0]?.trim() ||
+    "Random Prompt";
+  let name = titleCandidate;
+  if (name.length > 40) {
+    name =
+      name
+        .slice(0, 40)
+        .replace(/\s+\S*$/, "")
+        .trim() || name.slice(0, 40);
+  }
+  return { name, prompt };
 }

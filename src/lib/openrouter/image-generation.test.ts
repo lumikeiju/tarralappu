@@ -366,12 +366,11 @@ describe("input order, snapshots and inheritance", () => {
       "[PREVIOUS OUTPUTS]"
     );
   });
-  test("copied options/references are independent and budget approval resets", () => {
+  test("copied options/references are independent", () => {
     const source = sketch({
       imageOptions: { complexity: "high" },
       referenceImageIds: ["ref"],
-      markup: { imageId: "guide", baseImageId: "ref" },
-      budgetAcknowledged: true
+      markup: { imageId: "guide", baseImageId: "ref" }
     });
     const copy = copyGenerationSettings(source);
     copy.referenceImageIds.push("other");
@@ -379,7 +378,6 @@ describe("input order, snapshots and inheritance", () => {
     expect(source.referenceImageIds).toEqual(["ref"]);
     expect(source.imageOptions?.complexity).toBe("high");
     expect(copy.markup).toEqual(source.markup);
-    expect(copy.budgetAcknowledged).toBe(false);
   });
   test("completed refinements clear old base/guidance; draft sibling forks preserve them", () => {
     const source = sketch({

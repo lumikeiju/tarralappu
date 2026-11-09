@@ -8,6 +8,8 @@
     import { formatModelPricing, pricingTier } from "../lib/openrouter/cost";
     import {
         groupModelsByCreator,
+        getPinnedModels,
+        modelNameForCreator,
         isSelectedModelOption,
         type ModelPickerSection
     } from "../lib/openrouter/modelGroups";
@@ -36,32 +38,24 @@
         void togglePinnedModel(id);
     }
 
-    function label(m: ModelCapabilities): string {
-        return m.estimated ? `${m.name} (capabilities estimated)` : m.name;
+    function label(m: ModelCapabilities, creator?: string): string {
+        const name =
+            creator === undefined
+                ? m.name
+                : modelNameForCreator(m.name, creator);
+        return m.estimated ? `${name} (capabilities estimated)` : name;
     }
 
     const groups = $derived(
         groupModelsByCreator(boardState.availableModels, filter)
     );
 
-    function matchesFilter(model: ModelCapabilities): boolean {
-        const term = filter.trim().toLowerCase();
-        return (
-            term === "" ||
-            model.name.toLowerCase().includes(term) ||
-            model.id.toLowerCase().includes(term)
-        );
-    }
-
     const pinnedModels = $derived(
-        boardState.availableModels
-            .filter((model) =>
-                (boardState.board?.settings.pinnedModelIds ?? []).includes(
-                    model.id
-                )
-            )
-            .filter(matchesFilter)
-            .sort((a, b) => a.name.localeCompare(b.name))
+        getPinnedModels(
+            boardState.availableModels,
+            boardState.board?.settings.pinnedModelIds ?? [],
+            filter
+        )
     );
 
     function isPinned(modelId: string): boolean {
@@ -185,7 +179,7 @@
                                 onchange={() => selectModel(m.id, "catalog")}
                             />
                             <span class="model-name" title={m.id}
-                                >{label(m)}</span
+                                >{label(m, group.label)}</span
                             >
                             {#if tier}
                                 <span

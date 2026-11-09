@@ -1,6 +1,10 @@
 /// <reference types="bun" />
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { requestRandomPrompt, completedRandomPrompt } from "./randomPrompt";
+import {
+  requestRandomPrompt,
+  completedRandomPrompt,
+  completedPromptBoardEntry
+} from "./randomPrompt";
 import { requestRandomStyleGuide } from "./styleGuide";
 import type { CompletionResponse } from "./types";
 
@@ -51,6 +55,19 @@ test("prompt Random uses bounded text-only DeepSeek generation and cancellation"
   expect(body.messages[1].content).toContain("subject");
   expect(body.messages[0].content).toContain("Style clashes are welcome");
   expect(body.messages[1].content).toContain("requirements, not examples");
+});
+
+test("Prompt Board Random requests a concise representative name with its prompt", async () => {
+  const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json(
+      response("Name: Moonlit Switchyard\nPrompt:\nA quiet rail yard where...")
+    )
+  );
+  await requestRandomPrompt("local-test-only", undefined, "promptBoard");
+  const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
+  expect(body.messages[0].content).toContain("2-5 words");
+  expect(body.messages[0].content).toContain("Name: ");
+  expect(body.messages[1].content).toContain("Choose a very concise name");
 });
 
 test("shared request settings preserve the existing Style Guide workflow", async () => {
@@ -224,6 +241,54 @@ test("completed random prompts are trimmed", () => {
   expect(
     completedRandomPrompt(response("  A tiny floating observatory.\n"))
   ).toBe("A tiny floating observatory.");
+});
+
+test("completed Prompt Board entries return concise names and trimmed prompts", () => {
+  expect(
+    completedPromptBoardEntry(
+      response(
+        "  Name: Moonlit Switchyard  \nPrompt:\n  A rail yard at dusk.  "
+      )
+    )
+  ).toEqual({
+    name: "Moonlit Switchyard",
+    prompt: "A rail yard at dusk."
+  });
+});
+
+test("Prompt Board names are completed or truncated when model formatting varies", () => {
+  expect(
+    completedPromptBoardEntry(response("A moonlit switchyard by the sea."))
+  ).toEqual({
+    name: "A moonlit switchyard by the sea",
+    prompt: "A moonlit switchyard by the sea."
+  });
+  expect(
+    completedPromptBoardEntry(
+      response(
+        "Name: This Representative Title Is Much Much Too Long\nPrompt:\nA prompt."
+      )
+    ).name
+  ).toBe("This Representative Title Is Much Much");
+  expect(
+    completedPromptBoardEntry(
+      response(`Name: ${"x".repeat(41)}\nPrompt:\nA prompt.`)
+    ).name
+  ).toHaveLength(40);
+  expect(
+    completedPromptBoardEntry(
+      response("Moonlit Switchyard\nPrompt:\nA prompt.")
+    )
+  ).toEqual({ name: "Moonlit Switchyard", prompt: "A prompt." });
+});
+
+test("empty or oversized Prompt Board prompts still fail explicitly", () => {
+  for (const content of [
+    "Name: Missing Prompt\nPrompt:\n ",
+    `Name: A Title\nPrompt:\n${"x".repeat(32_001)}`
+  ]) {
+    expect(() => completedPromptBoardEntry(response(content))).toThrow();
+  }
 });
 
 test("incomplete, empty and oversized prompts fail instead of replacing notes", () => {

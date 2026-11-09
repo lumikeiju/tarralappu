@@ -86,8 +86,20 @@
     <div class="ref-grid">
         <!-- Style Reference -->
         <div class="ref-slot">
-            <span class="ref-slot__label">Style Reference</span>
-            <p class="ref-slot__hint">Palette, texture, mood</p>
+            <div class="ref-slot__header">
+                <div class="ref-slot__copy">
+                    <span class="ref-slot__label">Style Reference</span>
+                    <p class="ref-slot__hint">Palette, texture, mood</p>
+                </div>
+                {#if styleRefId}
+                    <button
+                        bind:this={styleRemoveButton}
+                        class="btn-icon remove-btn"
+                        onclick={removeStyle}
+                        aria-label="Remove style reference">✕</button
+                    >
+                {/if}
+            </div>
             {#if styleRefId}
                 <div class="ref-preview">
                     <MediaPreview
@@ -95,12 +107,6 @@
                         alt="Style reference"
                         compact
                     />
-                    <button
-                        bind:this={styleRemoveButton}
-                        class="btn-icon remove-btn"
-                        onclick={removeStyle}
-                        aria-label="Remove style reference">✕</button
-                    >
                 </div>
             {:else}
                 <label class="upload-label">
@@ -122,13 +128,27 @@
                     <p class="ref-error" role="alert">{styleError}</p>
                 {/if}
             {/if}
-            {#if styleStatus}<p role="status">{styleStatus}</p>{/if}
+            {#if styleStatus}<p class="ref-status" role="status">
+                    {styleStatus}
+                </p>{/if}
         </div>
 
         <!-- Layout Reference -->
         <div class="ref-slot">
-            <span class="ref-slot__label">Layout Reference</span>
-            <p class="ref-slot__hint">Composition, placement</p>
+            <div class="ref-slot__header">
+                <div class="ref-slot__copy">
+                    <span class="ref-slot__label">Layout Reference</span>
+                    <p class="ref-slot__hint">Composition, placement</p>
+                </div>
+                {#if layoutRefId}
+                    <button
+                        bind:this={layoutRemoveButton}
+                        class="btn-icon remove-btn"
+                        onclick={removeLayout}
+                        aria-label="Remove layout reference">✕</button
+                    >
+                {/if}
+            </div>
             {#if layoutRefId}
                 <div class="ref-preview">
                     <MediaPreview
@@ -136,12 +156,6 @@
                         alt="Layout reference"
                         compact
                     />
-                    <button
-                        bind:this={layoutRemoveButton}
-                        class="btn-icon remove-btn"
-                        onclick={removeLayout}
-                        aria-label="Remove layout reference">✕</button
-                    >
                 </div>
             {:else}
                 <label class="upload-label">
@@ -163,7 +177,9 @@
                     <p class="ref-error" role="alert">{layoutError}</p>
                 {/if}
             {/if}
-            {#if layoutStatus}<p role="status">{layoutStatus}</p>{/if}
+            {#if layoutStatus}<p class="ref-status" role="status">
+                    {layoutStatus}
+                </p>{/if}
         </div>
     </div>
 </section>
@@ -190,6 +206,16 @@
         flex-direction: column;
         gap: 4px;
     }
+    .ref-slot__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .ref-slot__copy {
+        display: flex;
+        flex-direction: column;
+    }
     .ref-slot__label {
         font-size: 0.8125rem;
         font-weight: 600;
@@ -200,11 +226,15 @@
         color: var(--clr-text-3);
         margin: 0;
     }
+    .ref-status {
+        font-size: 0.75rem;
+        color: var(--clr-text-2);
+        margin: 0;
+    }
     .ref-preview :global(.media-preview img) {
         max-height: 100px;
     }
     .remove-btn {
-        align-self: flex-end;
         background: var(--clr-text);
         color: var(--clr-surface);
         border-radius: 50%;

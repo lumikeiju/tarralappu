@@ -213,6 +213,8 @@
         margin-top: 4px;
     }
     .image-description summary {
+        font-size: 0.75rem;
+        color: var(--clr-text-2);
         cursor: pointer;
         min-height: 24px;
         padding-block: 4px;

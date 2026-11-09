@@ -19,14 +19,12 @@
     let pendingStyleDoc: string | undefined;
     let controller: AbortController | undefined;
     let generating = $state(false);
-    let budgetAcknowledged = $state(false);
     let error = $state("");
     let errorRaw = $state<string | null>(null);
     let status = $state("");
     let randomButton = $state<HTMLButtonElement>();
     let cancelButton = $state<HTMLButtonElement>();
     let styleInput = $state<HTMLTextAreaElement>();
-    let budgetCheckbox = $state<HTMLInputElement>();
     let destroyed = false;
 
     function onInput(e: Event) {
@@ -63,8 +61,7 @@
                 await updateBoardSettings({ styleDoc: value });
             }
             const result = await generateRandomStyleGuide({
-                signal: controller.signal,
-                budgetAcknowledged
+                signal: controller.signal
             });
             status =
                 result.costUsd === null
@@ -82,14 +79,11 @@
             const restoreFocus =
                 !destroyed && document.activeElement === cancelButton;
             generating = false;
-            budgetAcknowledged = false;
             controller = undefined;
             if (restoreFocus) {
                 await tick();
                 if (randomButton && !randomButton.disabled) {
                     randomButton.focus();
-                } else if (budgetCheckbox && !budgetCheckbox.disabled) {
-                    budgetCheckbox.focus();
                 } else {
                     styleInput?.focus();
                 }
@@ -115,8 +109,7 @@
                 disabled={generating ||
                     randomTextGeneration.inProgress ||
                     !auth.apiKey ||
-                    capReached ||
-                    (cap !== null && !budgetAcknowledged)}
+                    capReached}
                 onclick={randomize}
                 aria-describedby="style-doc-random-hint"
                 title="Generate a random style guide with DeepSeek Flash via OpenRouter (uses API credits)"
@@ -147,33 +140,24 @@
         disabled={generating}
         spellcheck></textarea>
     <p class="panel-hint" id="style-doc-random-hint">
-        Random uses DeepSeek Flash via OpenRouter and API credits.
+        Random uses DeepSeek Flash via OpenRouter and (a tiny amount of) API
+        credits.
         {#if !auth.apiKey}Connect an API key to enable it.{/if}
         {#if capReached}The session cost cap is reached.{/if}
         {#if randomTextGeneration.inProgress && !generating}
             Another Random request is running.
         {/if}
     </p>
-    {#if cap !== null && !capReached}
-        <label class="budget-acknowledgment">
-            <input
-                bind:this={budgetCheckbox}
-                type="checkbox"
-                bind:checked={budgetAcknowledged}
-                disabled={generating}
-            />
-            I understand Random cannot be pre-estimated and may exceed this local
-            cap.
-        </label>
-    {/if}
     {#if boardState.board?.styleGuideUnreportedCosts}
         <p class="panel-hint">
             Some style-guide costs are unavailable; the session total may be
             incomplete.
         </p>
     {/if}
-    {#if generating}<p role="status">Generating a random style guide...</p>{/if}
-    {#if status}<p role="status">{status}</p>{/if}
+    {#if generating}<p class="panel-hint" role="status">
+            Generating a random style guide...
+        </p>{/if}
+    {#if status}<p class="panel-hint" role="status">{status}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if errorRaw}
         <details>
@@ -206,16 +190,6 @@
     }
     .random-button {
         min-height: 24px;
-    }
-    .budget-acknowledgment {
-        display: flex;
-        align-items: start;
-        gap: 6px;
-        font-size: 0.75rem;
-    }
-    .budget-acknowledgment input {
-        width: auto;
-        flex-shrink: 0;
     }
     .error {
         color: var(--clr-danger);

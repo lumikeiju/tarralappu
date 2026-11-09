@@ -1,16 +1,28 @@
 <script lang="ts">
-    import { boardState, loadAvailableModels } from "../lib/state/board.svelte";
+    import {
+        boardState,
+        loadAvailableModels,
+        togglePinnedModel
+    } from "../lib/state/board.svelte";
     import { formatModelPricing, pricingTier } from "../lib/openrouter/cost";
-    import { groupModelsByCreator } from "../lib/openrouter/modelGroups";
+    import {
+        groupModelsByCreator,
+        getPinnedModels,
+        modelNameForCreator
+    } from "../lib/openrouter/modelGroups";
+    import type { ModelCapabilities } from "../lib/openrouter/types";
+    import { humanizeError } from "../lib/openrouter/client";
 
     const {
         open,
         promptPreview,
+        promptCount = 1,
         onClose,
         onSend
     }: {
         open: boolean;
         promptPreview: string;
+        promptCount?: number;
         onClose: () => void;
         onSend: (modelIds: string[]) => void;
     } = $props();
@@ -18,6 +30,7 @@
     let dialogEl: HTMLDialogElement | undefined = $state();
     let filter = $state("");
     let selected = $state(new Set<string>());
+    let pinError = $state("");
 
     $effect(() => {
         if (!dialogEl) return;
@@ -25,6 +38,7 @@
             // Reset selection/filter each time the dialog is (re)opened.
             selected = new Set();
             filter = "";
+            pinError = "";
             dialogEl.showModal();
         } else if (!open && dialogEl.open) {
             dialogEl.close();
@@ -45,6 +59,26 @@
     const groups = $derived(
         groupModelsByCreator(boardState.availableModels, filter)
     );
+    const pinnedModels = $derived(
+        getPinnedModels(
+            boardState.availableModels,
+            boardState.board?.settings.pinnedModelIds ?? [],
+            filter
+        )
+    );
+
+    function isPinned(id: string): boolean {
+        return (boardState.board?.settings.pinnedModelIds ?? []).includes(id);
+    }
+
+    async function toggleModelPin(id: string) {
+        pinError = "";
+        try {
+            await togglePinnedModel(id);
+        } catch (cause) {
+            pinError = humanizeError(cause);
+        }
+    }
 
     function toggle(id: string) {
         const next = new Set(selected);
@@ -64,6 +98,45 @@
     }
 </script>
 
+{#snippet modelOption(m: ModelCapabilities, displayName: string)}
+    {@const tier = pricingTier(m.pricing, m.id)}
+    <div class="model-option">
+        <label class="model-choice">
+            <input
+                type="checkbox"
+                checked={selected.has(m.id)}
+                onchange={() => toggle(m.id)}
+            />
+            <span class="model-name" title={m.id}>{displayName}</span>
+            {#if tier}
+                <span
+                    class="price-tier"
+                    data-tier={tier}
+                    title="Relative cost tier: {tier}"
+                >
+                    {tier}
+                </span>
+            {/if}
+            <span class="model-price"
+                >{formatModelPricing(m.pricing, m.id) ??
+                    "pricing not listed"}</span
+            >
+        </label>
+        <button
+            type="button"
+            class="pin-btn"
+            class:pinned={isPinned(m.id)}
+            aria-pressed={isPinned(m.id)}
+            aria-label="Pin {m.name}"
+            title={isPinned(m.id) ? "Unpin model" : "Pin model"}
+            disabled={boardState.modelsLoading}
+            onclick={() => toggleModelPin(m.id)}
+        >
+            <span aria-hidden="true">{isPinned(m.id) ? "★" : "☆"}</span>
+        </button>
+    </div>
+{/snippet}
+
 <dialog
     bind:this={dialogEl}
     class="send-to-dialog"
@@ -78,7 +151,10 @@
     >
         <div class="send-to-panel card">
             <div class="send-to-header">
-                <h2 id="send-to-title">Send Prompt to Models</h2>
+                <h2 id="send-to-title">
+                    Send {promptCount > 1 ? `${promptCount} Prompts` : "Prompt"} to
+                    Models
+                </h2>
                 <button
                     class="btn-icon"
                     onclick={onClose}
@@ -92,7 +168,9 @@
             <p
                 class="send-to-preview"
                 role="region"
-                aria-label="Prompt preview"
+                aria-label={promptCount > 1
+                    ? "Selected prompts"
+                    : "Prompt preview"}
                 tabindex="0"
             >
                 “{promptPreview}”
@@ -110,6 +188,17 @@
             </div>
 
             <div class="model-groups">
+                {#if pinnedModels.length > 0}
+                    <fieldset class="creator-group pinned-group">
+                        <legend>PINNED</legend>
+                        {#each pinnedModels as m (m.id)}
+                            {@render modelOption(m, m.name)}
+                        {/each}
+                    </fieldset>
+                    {#if groups.length > 0}
+                        <hr class="group-sep" />
+                    {/if}
+                {/if}
                 {#each groups as group, i (group.key)}
                     {#if i > 0}
                         <hr class="group-sep" />
@@ -117,30 +206,10 @@
                     <fieldset class="creator-group">
                         <legend>{group.label}</legend>
                         {#each group.models as m (m.id)}
-                            {@const tier = pricingTier(m.pricing, m.id)}
-                            <label class="model-option">
-                                <input
-                                    type="checkbox"
-                                    checked={selected.has(m.id)}
-                                    onchange={() => toggle(m.id)}
-                                />
-                                <span class="model-name" title={m.id}
-                                    >{m.name}</span
-                                >
-                                {#if tier}
-                                    <span
-                                        class="price-tier"
-                                        data-tier={tier}
-                                        title="Relative cost tier: {tier}"
-                                    >
-                                        {tier}
-                                    </span>
-                                {/if}
-                                <span class="model-price"
-                                    >{formatModelPricing(m.pricing, m.id) ??
-                                        "pricing not listed"}</span
-                                >
-                            </label>
+                            {@render modelOption(
+                                m,
+                                modelNameForCreator(m.name, group.label)
+                            )}
                         {/each}
                     </fieldset>
                 {/each}
@@ -152,6 +221,8 @@
                     </p>
                 {/if}
             </div>
+
+            {#if pinError}<p class="pin-error" role="alert">{pinError}</p>{/if}
 
             {#if boardState.modelsError}
                 <button class="btn-ghost" onclick={loadAvailableModels}
@@ -172,8 +243,9 @@
                         onclick={handleConfirm}
                         disabled={selected.size === 0}
                     >
-                        Send to {selected.size || ""}
-                        {selected.size === 1 ? "model" : "models"}
+                        {promptCount > 1
+                            ? `Create ${promptCount * selected.size} drafts`
+                            : `Send to ${selected.size} ${selected.size === 1 ? "model" : "models"}`}
                     </button>
                 </div>
             </div>
@@ -286,6 +358,7 @@
         border: none;
         padding: 0;
         margin: 0;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 2px;
@@ -304,6 +377,8 @@
         display: flex;
         align-items: baseline;
         gap: 8px;
+        min-width: 0;
+        width: 100%;
         font-size: 0.8125rem;
         color: var(--clr-text);
         cursor: pointer;
@@ -312,6 +387,42 @@
     }
     .model-option:hover {
         background: var(--clr-surface);
+    }
+    .model-choice {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        cursor: pointer;
+        color: inherit;
+    }
+    .pin-btn {
+        flex: 0 0 auto;
+        min-width: 24px;
+        min-height: 24px;
+        padding: 2px 4px;
+        border: none;
+        background: transparent;
+        color: var(--clr-text-3);
+        font-size: 1rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .pin-btn:hover:not(:disabled),
+    .pin-btn.pinned {
+        color: var(--clr-accent);
+    }
+    .pin-btn:focus-visible {
+        outline: 2px solid transparent;
+        box-shadow: var(--focus-ring);
+    }
+    .pin-error {
+        color: var(--clr-danger);
+        font-size: 0.8125rem;
+        overflow-wrap: anywhere;
     }
     .model-name {
         flex: 1;

@@ -40,6 +40,47 @@ test("Random uses a bounded, text-only request with usage and cancellation", asy
   });
   expect(body.image_config).toBeUndefined();
   expect(body.messages).toHaveLength(2);
+  expect(body.messages[0].content).toContain("open-ended visual art direction");
+  expect(body.messages[0].content).toContain(
+    "Avoid defaulting to paper, ink, collage, or print aesthetics"
+  );
+  expect(body.messages[1].content).toContain("about 45-70 words");
+});
+
+test("style directions rotate across digital, physical, and recursive media", async () => {
+  const fetch = spyOn(globalThis, "fetch");
+
+  for (let index = 0; index < 6; index++) {
+    fetch.mockResolvedValue(
+      Response.json(response("A flexible art direction."))
+    );
+    await requestRandomStyleGuide("local-test-only");
+  }
+
+  const directions = fetch.mock.calls.map(([, init]) => {
+    const body = JSON.parse(String(init?.body));
+    const prompt = body.messages[1].content as string;
+    return {
+      family: prompt.match(/Medium family: ([^.]+)/)![1]!,
+      direction: prompt.match(/Medium direction: ([^.]+(?:\.[^.]+)?)/)![1]!
+    };
+  });
+
+  expect(new Set(directions.map(({ family }) => family))).toEqual(
+    new Set(["digital", "physical", "hybrid"])
+  );
+  expect(
+    directions.every(
+      ({ family }, index) =>
+        index === 0 || family !== directions[index - 1]!.family
+    )
+  ).toBe(true);
+  expect(new Set(directions.map(({ direction }) => direction)).size).toBe(6);
+  expect(
+    directions
+      .filter(({ family }) => family === "hybrid")
+      .every(({ direction }) => /recursive|nests/.test(direction))
+  ).toBe(true);
 });
 
 test("completed style text is trimmed", () => {

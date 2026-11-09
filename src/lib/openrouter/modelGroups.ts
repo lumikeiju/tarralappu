@@ -48,6 +48,35 @@ export function creatorLabel(key: string): string {
   );
 }
 
+export function modelNameForCreator(name: string, creator: string): string {
+  const separator = name.indexOf(":");
+  if (separator < 0 || name.slice(0, separator) !== creator) return name;
+  return name.slice(separator + 1).trimStart() || name;
+}
+
+function filterModels(
+  models: ModelCapabilities[],
+  filterTerm: string
+): ModelCapabilities[] {
+  const term = filterTerm.trim().toLowerCase();
+  return models.filter(
+    (model) =>
+      term === "" ||
+      model.name.toLowerCase().includes(term) ||
+      model.id.toLowerCase().includes(term)
+  );
+}
+
+export function getPinnedModels(
+  models: ModelCapabilities[],
+  pinnedIds: string[],
+  filterTerm = ""
+): ModelCapabilities[] {
+  return filterModels(models, filterTerm)
+    .filter((model) => pinnedIds.includes(model.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * Group models by creator (id prefix before "/"), optionally filtered by a
  * case-insensitive search term against the model's name/id. Groups are
@@ -59,13 +88,7 @@ export function groupModelsByCreator(
   models: ModelCapabilities[],
   filterTerm = ""
 ): CreatorGroup[] {
-  const term = filterTerm.trim().toLowerCase();
-  const filtered = models.filter(
-    (m) =>
-      term === "" ||
-      m.name.toLowerCase().includes(term) ||
-      m.id.toLowerCase().includes(term)
-  );
+  const filtered = filterModels(models, filterTerm);
   const byCreator = new Map<string, ModelCapabilities[]>();
   for (const m of filtered) {
     const key = creatorKey(m.id);

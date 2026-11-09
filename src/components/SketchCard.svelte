@@ -92,10 +92,6 @@
             ? estimateCost(caps, inputCount, sketch.outputCount ?? 1) === null
             : true
     );
-    const hasCostCap = $derived(
-        chain.chainCostCapUsd !== null ||
-            boardState.board?.settings.sessionCostCapUsd != null
-    );
     $effect(() => {
         if (caps && isGptImage26(chain.modelId))
             untrack(() => void loadImageEndpoints(chain.modelId));
@@ -150,10 +146,8 @@
     let randomStatus = $state("");
     let randomError = $state("");
     let randomErrorRaw = $state<string | null>(null);
-    let randomBudgetAcknowledged = $state(false);
     let randomButton = $state<HTMLButtonElement>();
     let cancelRandomButton = $state<HTMLButtonElement>();
-    let randomBudgetCheckbox = $state<HTMLInputElement>();
     let randomController: AbortController | undefined;
     let destroyed = false;
     const sessionCap = $derived(
@@ -199,8 +193,7 @@
         try {
             await flushPrompt();
             const result = await generateRandomSketchPrompt(sketch.id, {
-                signal: randomController.signal,
-                budgetAcknowledged: randomBudgetAcknowledged
+                signal: randomController.signal
             });
             randomStatus =
                 result.costUsd === null
@@ -218,17 +211,11 @@
             const restoreFocus =
                 !destroyed && document.activeElement === cancelRandomButton;
             randomizing = false;
-            randomBudgetAcknowledged = false;
             randomController = undefined;
             if (restoreFocus) {
                 await tick();
                 if (randomButton && !randomButton.disabled) {
                     randomButton.focus();
-                } else if (
-                    randomBudgetCheckbox &&
-                    !randomBudgetCheckbox.disabled
-                ) {
-                    randomBudgetCheckbox.focus();
                 } else {
                     document.getElementById(`prompt-${sketch.id}`)?.focus();
                 }
@@ -262,8 +249,7 @@
             (!isGptImage26(chain.modelId) ||
                 (!!caps.advanced.endpoint &&
                     !caps.advanced.pending &&
-                    !caps.advanced.error)) &&
-            (!unknownEstimate || !hasCostCap || !!sketch.budgetAcknowledged)
+                    !caps.advanced.error))
     );
 
     // Deterministic note rotation from sketch id (stable, no Math.random)
@@ -352,9 +338,7 @@
                     randomTextGeneration.inProgress ||
                     !auth.apiKey ||
                     isPendingTrash ||
-                    randomCapReached ||
-                    (sessionCap !== null && !randomBudgetAcknowledged)}
-                >Random</button
+                    randomCapReached}>Random</button
             >
             {#if randomizing}
                 <button
@@ -394,18 +378,6 @@
         {:else if randomTextGeneration.inProgress && !randomizing}
             <p class="prompt-random-hint">Another Random request is running.</p>
         {/if}
-        {#if sessionCap !== null && !randomCapReached}
-            <label class="random-budget-acknowledgment">
-                <input
-                    bind:this={randomBudgetCheckbox}
-                    type="checkbox"
-                    bind:checked={randomBudgetAcknowledged}
-                    disabled={randomizing || randomTextGeneration.inProgress}
-                />
-                I understand Random cannot be pre-estimated and may exceed this local
-                cap.
-            </label>
-        {/if}
         {#if randomizing}
             <p class="prompt-random-hint" role="status">
                 Generating a random prompt...
@@ -442,7 +414,6 @@
         <ImageAdvancedControls
             {sketch}
             capabilities={caps}
-            {hasCostCap}
             {unknownEstimate}
             onChange={(updates) => updateSketch(sketch.id, updates)}
         />
@@ -755,7 +726,6 @@
         font-size: 0.75rem;
     }
     .prompt-random-btn:focus-visible,
-    .random-budget-acknowledgment input:focus-visible,
     .prompt-random-hint summary:focus-visible {
         outline: 2px solid currentColor;
         outline-offset: 2px;
@@ -765,16 +735,6 @@
         font-size: 0.75rem;
         color: var(--clr-text);
         overflow-wrap: anywhere;
-    }
-    .random-budget-acknowledgment {
-        display: flex;
-        align-items: start;
-        gap: 6px;
-        font-size: 0.75rem;
-    }
-    .random-budget-acknowledgment input {
-        width: auto;
-        flex-shrink: 0;
     }
     .prompt-textarea {
         width: 100%;
