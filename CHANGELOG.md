@@ -4,6 +4,28 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v2.1.0 (2026-11-08)
+
+### Changed
+
+- Removed redundant author prefixes from model names under matching creator headings.
+- Applied shared model pins to the Send to… dialog, with pinned models first and in-place pin controls that preserve multi-selection.
+- Matched reference upload and removal status text to the compact image-description styling.
+- Moved reference removal controls to the top-right of their slot headers.
+- Removed repeated acknowledgments before Random text and unknown-estimate image requests; local caps still block requests once known or reserved costs reach the limit.
+- Reduced the image-description disclosure text to match surrounding image metadata.
+- Clarified the small API-credit cost of Random style-guide generation.
+- Added multi-select Prompt Board sending to create drafts for multiple prompts with one shared model selection.
+- Showed consistent check and cross indicators for the style guide and both reference images.
+- Made Random Style Guide results briefer and more open-ended, with rotating digital, physical, and hybrid/recursive medium directions.
+- De-emphasized Style Guide Random status messages to match surrounding hint text.
+- Added concise representative names to Random-generated Prompt Board entries, with automatic fallback and truncation for imperfect titles.
+- Added a dark-theme app screenshot to the README.
+
+### Fixed
+
+- Enforced CRLF working-tree line endings with `.gitattributes` so Linux CI checkouts pass `bun format:check`.
+
 ## v2.0.0 (2026-11-07)
 
 ### Added

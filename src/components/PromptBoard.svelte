@@ -5,7 +5,7 @@
         addPromptNote,
         updatePromptNote,
         removePromptNote,
-        sendPromptToModels,
+        sendPromptsToModels,
         generateRandomPrompt,
         getSessionBudgetUsed,
         randomTextGeneration
@@ -36,9 +36,11 @@
     >();
     let addNoteButton = $state<HTMLButtonElement>();
     let cancelButton = $state<HTMLButtonElement>();
-    let budgetCheckbox = $state<HTMLInputElement>();
     let generatingNoteId = $state<string | null>(null);
-    let budgetAcknowledged = $state(false);
+    let selectedNoteIds = $state(new Set<string>());
+    let sendingPrompts = $state(false);
+    let sendStatus = $state("");
+    let sendError = $state("");
     let feedback = $state<{
         noteId: string;
         status: string;
@@ -77,8 +79,7 @@
         try {
             await flushNote(id);
             const result = await generateRandomPrompt(id, {
-                signal: controller.signal,
-                budgetAcknowledged
+                signal: controller.signal
             });
             feedback = {
                 noteId: id,
@@ -104,15 +105,12 @@
             const restoreFocus =
                 !destroyed && document.activeElement === cancelButton;
             generatingNoteId = null;
-            budgetAcknowledged = false;
             controller = undefined;
             if (restoreFocus) {
                 await tick();
                 const button = document.getElementById(`prompt-random-${id}`);
                 if (button instanceof HTMLButtonElement && !button.disabled) {
                     button.focus();
-                } else if (budgetCheckbox && !budgetCheckbox.disabled) {
-                    budgetCheckbox.focus();
                 } else {
                     document.getElementById(`prompt-note-${id}`)?.focus();
                 }
@@ -124,6 +122,9 @@
         clearTimeout(debounceTimers.get(id));
         debounceTimers.delete(id);
         pendingEdits.delete(id);
+        const nextSelection = new Set(selectedNoteIds);
+        nextSelection.delete(id);
+        selectedNoteIds = nextSelection;
         const index = notes.findIndex((note) => note.id === id);
         await removePromptNote(id);
         await tick();
@@ -137,6 +138,11 @@
 
     function onNoteInput(id: string, field: "name" | "text", value: string) {
         if (feedback?.noteId === id) feedback = null;
+        if (field === "text" && !value.trim()) {
+            const nextSelection = new Set(selectedNoteIds);
+            nextSelection.delete(id);
+            selectedNoteIds = nextSelection;
+        }
         pendingEdits.set(id, { ...pendingEdits.get(id), [field]: value });
         clearTimeout(debounceTimers.get(id));
         debounceTimers.set(
@@ -165,21 +171,72 @@
         void addPromptNote();
     }
 
-    // "Send to" dialog: which note (if any) is currently being sent.
-    let sendDialogNoteId = $state<string | null>(null);
-    const sendDialogNote = $derived(
-        notes.find((n) => n.id === sendDialogNoteId) ?? null
+    const selectedNotes = $derived(
+        notes.filter((note) => selectedNoteIds.has(note.id) && note.text.trim())
+    );
+    let sendDialogNoteIds = $state<string[]>([]);
+    let sendDialogIsBulk = $state(false);
+    const sendDialogNotes = $derived(
+        sendDialogNoteIds
+            .map((id) => notes.find((note) => note.id === id))
+            .filter((note): note is PromptNote => Boolean(note?.text.trim()))
     );
 
     function openSendDialog(id: string) {
-        sendDialogNoteId = id;
+        sendDialogNoteIds = [id];
+        sendDialogIsBulk = false;
+        sendError = "";
+        sendStatus = "";
+    }
+    function openSelectedSendDialog() {
+        if (selectedNotes.length === 0 || sendingPrompts) return;
+        sendDialogNoteIds = selectedNotes.map((note) => note.id);
+        sendDialogIsBulk = true;
+        sendError = "";
+        sendStatus = "";
     }
     function closeSendDialog() {
-        sendDialogNoteId = null;
+        sendDialogNoteIds = [];
+        sendDialogIsBulk = false;
     }
     function handleSend(modelIds: string[]) {
-        if (!sendDialogNote) return;
-        void sendPromptToModels(sendDialogNote.text, modelIds);
+        const promptEntries = sendDialogNotes.map((note) => ({
+            id: note.id,
+            text: pendingEdits.get(note.id)?.text ?? note.text
+        }));
+        const noteIds = promptEntries.map((entry) => entry.id);
+        const prompts = promptEntries
+            .map((entry) => entry.text)
+            .filter((text) => text.trim());
+        const wasBulk = sendDialogIsBulk;
+        if (prompts.length === 0 || modelIds.length === 0) return;
+
+        sendingPrompts = true;
+        sendError = "";
+        sendStatus = "";
+        void (async () => {
+            try {
+                for (const id of noteIds) await flushNote(id);
+                await sendPromptsToModels(prompts, modelIds);
+                const draftCount = prompts.length * modelIds.length;
+                sendStatus = `Created ${draftCount} prompt draft${draftCount === 1 ? "" : "s"}.`;
+                if (wasBulk) selectedNoteIds = new Set();
+            } catch (cause) {
+                sendError = `${humanizeError(cause)} Some drafts may already have been created.`;
+            } finally {
+                sendingPrompts = false;
+            }
+        })();
+        closeSendDialog();
+    }
+
+    function togglePromptSelection(id: string) {
+        const next = new Set(selectedNoteIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        selectedNoteIds = next;
+        sendError = "";
+        sendStatus = "";
     }
 
     onDestroy(() => {
@@ -190,6 +247,42 @@
     });
 </script>
 
+{#if selectedNotes.length > 0}
+    <div
+        class="prompt-board-selection"
+        role="group"
+        aria-label="Selected prompts"
+    >
+        <span aria-live="polite">
+            {selectedNotes.length} prompt{selectedNotes.length === 1 ? "" : "s"} selected
+        </span>
+        <div class="prompt-board-selection__actions">
+            <button
+                class="btn-primary"
+                type="button"
+                onclick={openSelectedSendDialog}
+                disabled={sendingPrompts}
+            >
+                Send to…
+            </button>
+            <button
+                class="btn-ghost"
+                type="button"
+                onclick={() => (selectedNoteIds = new Set())}
+                disabled={sendingPrompts}
+            >
+                Clear selection
+            </button>
+        </div>
+    </div>
+{/if}
+{#if sendStatus}
+    <p class="prompt-send-status" role="status">{sendStatus}</p>
+{/if}
+{#if sendError}
+    <p class="prompt-note__error" role="alert">{sendError}</p>
+{/if}
+
 <div class="prompt-board" role="list" aria-label="Prompt board notes">
     {#each notes as note (note.id)}
         <div
@@ -198,6 +291,16 @@
             style="--note-rotation: {noteRotation(note.id)}deg"
         >
             <div class="prompt-note__actions">
+                <input
+                    class="prompt-note__select"
+                    type="checkbox"
+                    checked={selectedNoteIds.has(note.id)}
+                    onchange={() => togglePromptSelection(note.id)}
+                    aria-label="Select prompt {note.name || 'without a name'}"
+                    disabled={sendingPrompts ||
+                        generatingNoteId === note.id ||
+                        !note.text.trim()}
+                />
                 <button
                     id="prompt-random-{note.id}"
                     class="btn-ghost prompt-note__random"
@@ -206,11 +309,11 @@
                     aria-label="Random prompt for this note"
                     aria-describedby="prompt-random-hint"
                     title="Generate a random image prompt with DeepSeek Flash via OpenRouter (uses API credits)"
-                    disabled={generatingNoteId !== null ||
+                    disabled={sendingPrompts ||
+                        generatingNoteId !== null ||
                         randomTextGeneration.inProgress ||
                         !auth.apiKey ||
-                        capReached ||
-                        (cap !== null && !budgetAcknowledged)}>Random</button
+                        capReached}>Random</button
                 >
                 {#if generatingNoteId === note.id}
                     <button
@@ -229,7 +332,9 @@
                         ? "Copied"
                         : "Copy prompt text"}
                     title="Copy"
-                    disabled={!note.text || generatingNoteId === note.id}
+                    disabled={sendingPrompts ||
+                        !note.text ||
+                        generatingNoteId === note.id}
                 >
                     {copiedId === note.id ? "✓" : "⧉"}
                 </button>
@@ -238,7 +343,9 @@
                     onclick={() => openSendDialog(note.id)}
                     aria-label="Send this prompt to one or more models"
                     title="Send to…"
-                    disabled={!note.text || generatingNoteId === note.id}
+                    disabled={sendingPrompts ||
+                        !note.text ||
+                        generatingNoteId === note.id}
                 >
                     ➤
                 </button>
@@ -247,7 +354,7 @@
                     onclick={() => removeNote(note.id)}
                     aria-label="Remove this prompt note"
                     title="Remove"
-                    disabled={generatingNoteId === note.id}
+                    disabled={sendingPrompts || generatingNoteId === note.id}
                 >
                     ✕
                 </button>
@@ -267,7 +374,7 @@
                     )}
                 placeholder="Name this prompt…"
                 type="text"
-                disabled={generatingNoteId === note.id}
+                disabled={sendingPrompts || generatingNoteId === note.id}
             />
             <label class="sr-only" for="prompt-note-{note.id}"
                 >Prompt note text</label
@@ -282,7 +389,7 @@
                         (e.target as HTMLTextAreaElement).value
                     )}
                 rows={5}
-                disabled={generatingNoteId === note.id}
+                disabled={sendingPrompts || generatingNoteId === note.id}
                 placeholder="Jot a prompt to reuse later…"></textarea>
             {#if generatingNoteId === note.id}
                 <p class="prompt-random-hint" role="status">
@@ -332,19 +439,6 @@
         Another Random request is running.
     {/if}
 </p>
-{#if cap !== null && !capReached}
-    <label class="budget-acknowledgment">
-        <input
-            bind:this={budgetCheckbox}
-            type="checkbox"
-            bind:checked={budgetAcknowledged}
-            disabled={generatingNoteId !== null ||
-                randomTextGeneration.inProgress}
-        />
-        I understand random prompts cannot be pre-estimated and may exceed this local
-        cap.
-    </label>
-{/if}
 {#if boardState.board?.randomPromptUnreportedCosts}
     <p class="prompt-random-hint">
         Some random-prompt costs are unavailable; the session total may be
@@ -353,13 +447,39 @@
 {/if}
 
 <SendToDialog
-    open={sendDialogNote !== null}
-    promptPreview={sendDialogNote?.text ?? ""}
+    open={sendDialogNotes.length > 0}
+    promptPreview={sendDialogNotes.length === 1
+        ? sendDialogNotes[0].text
+        : `${sendDialogNotes.length} prompts selected. Drafts will be created for each selected prompt and model.`}
+    promptCount={sendDialogNotes.length}
     onClose={closeSendDialog}
     onSend={handleSend}
 />
 
 <style>
+    .prompt-board-selection {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 4px 4px 0;
+        font-size: 0.8125rem;
+        color: var(--clr-text-2);
+    }
+    .prompt-board-selection__actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .prompt-board-selection__actions button {
+        min-height: 30px;
+    }
+    .prompt-send-status {
+        padding: 4px;
+        font-size: 0.75rem;
+        color: var(--clr-success);
+    }
     .prompt-board {
         display: flex;
         flex-direction: row;
@@ -391,23 +511,19 @@
     .prompt-note__random {
         margin-right: auto;
     }
+    .prompt-note__select {
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        accent-color: var(--clr-accent);
+    }
     .prompt-note__random:focus-visible,
     .prompt-note__cancel:focus-visible {
         outline-color: currentColor;
     }
-    .prompt-random-hint,
-    .budget-acknowledgment {
+    .prompt-random-hint {
         font-size: 0.75rem;
         color: var(--clr-text-3);
-    }
-    .budget-acknowledgment {
-        display: flex;
-        align-items: start;
-        gap: 6px;
-    }
-    .budget-acknowledgment input {
-        width: auto;
-        flex-shrink: 0;
     }
     .prompt-note__error {
         font-size: 0.75rem;

@@ -27,9 +27,9 @@
     <details class="cap-details">
         <summary>How this cap works</summary>
         <p>
-            Known estimates reserve budget. If a request cannot be estimated,
-            acknowledgment may let it exceed this cap. Set a spending limit in
-            OpenRouter for a provider-enforced billing cap.
+            Known estimates reserve budget. If a request cannot be estimated, it
+            may exceed this cap. Set a spending limit in OpenRouter for a
+            provider-enforced billing cap.
         </p>
         <p>
             This local total includes retained sketches and Random text.

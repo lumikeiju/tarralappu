@@ -17,8 +17,7 @@ export function copyGenerationSettings(sketch: Sketch) {
     imageOptions: { ...sketch.imageOptions },
     referenceImageIds: [...(sketch.referenceImageIds ?? [])],
     editSourceImageId: sketch.editSourceImageId ?? null,
-    ...(sketch.markup ? { markup: { ...sketch.markup } } : {}),
-    budgetAcknowledged: false
+    ...(sketch.markup ? { markup: { ...sketch.markup } } : {})
   };
 }
 

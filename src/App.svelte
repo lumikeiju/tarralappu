@@ -64,16 +64,16 @@
                 Style &amp; References
                 <span class="authoring-toggle__hint">
                     {boardState.board?.settings.styleDoc
-                        ? "Style guide set"
-                        : "No style guide"}
+                        ? "Style Guide ✓"
+                        : "Style Guide ✗"}
                     ·
                     {boardState.board?.settings.styleRefImageId
-                        ? "Style ref ✓"
-                        : "No style ref"}
+                        ? "Style Reference ✓"
+                        : "Style Reference ✗"}
                     ·
                     {boardState.board?.settings.layoutRefImageId
-                        ? "Layout ref ✓"
-                        : "No layout ref"}
+                        ? "Layout Reference ✓"
+                        : "Layout Reference ✗"}
                 </span>
             </summary>
 
