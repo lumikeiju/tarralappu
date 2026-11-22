@@ -1,10 +1,8 @@
 <script lang="ts">
-    import { boardState, updateBoardSettings } from "../lib/state/board.svelte";
     import {
-        replaceGlobalImage,
-        deleteGlobalImage,
-        validateImageFile
-    } from "../lib/db/images";
+        boardState,
+        updateGlobalReference
+    } from "../lib/state/board.svelte";
     import { tick } from "svelte";
     import MediaPreview from "./MediaPreview.svelte";
 
@@ -15,68 +13,48 @@
         boardState.board?.settings.layoutRefImageId ?? null
     );
 
-    let styleError = $state<string | null>(null);
-    let layoutError = $state<string | null>(null);
-    let styleStatus = $state("");
-    let layoutStatus = $state("");
+    const feedback = $state({
+        style: { busy: false, error: "", status: "" },
+        layout: { busy: false, error: "", status: "" }
+    });
     let styleUploadInput = $state<HTMLInputElement>();
     let layoutUploadInput = $state<HTMLInputElement>();
     let styleRemoveButton = $state<HTMLButtonElement>();
     let layoutRemoveButton = $state<HTMLButtonElement>();
 
-    async function uploadStyle(e: Event) {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-        styleStatus = "";
-        styleError = validateImageFile(file);
-        if (styleError) return;
-        const oldId = boardState.board?.settings.styleRefImageId ?? null;
+    async function changeReference(
+        kind: "style" | "layout",
+        file: File | null
+    ) {
+        const slot = feedback[kind];
+        if (slot.busy) return;
+        slot.busy = true;
+        slot.error = "";
+        slot.status = "";
         try {
-            const stored = await replaceGlobalImage(oldId, file, "styleRef");
-            await updateBoardSettings({ styleRefImageId: stored.id });
-            styleStatus = "Style reference uploaded.";
-            await tick();
-            styleRemoveButton?.focus();
+            await updateGlobalReference(`${kind}RefImageId`, file);
+            const label = kind === "style" ? "Style" : "Layout";
+            slot.status = `${label} reference ${file ? "uploaded" : "removed"}.`;
         } catch (cause) {
-            styleError = cause instanceof Error ? cause.message : String(cause);
+            slot.error = cause instanceof Error ? cause.message : String(cause);
+        } finally {
+            slot.busy = false;
         }
-    }
-
-    async function uploadLayout(e: Event) {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-        layoutStatus = "";
-        layoutError = validateImageFile(file);
-        if (layoutError) return;
-        const oldId = boardState.board?.settings.layoutRefImageId ?? null;
-        try {
-            const stored = await replaceGlobalImage(oldId, file, "layoutRef");
-            await updateBoardSettings({ layoutRefImageId: stored.id });
-            layoutStatus = "Layout reference uploaded.";
-            await tick();
-            layoutRemoveButton?.focus();
-        } catch (cause) {
-            layoutError =
-                cause instanceof Error ? cause.message : String(cause);
-        }
-    }
-
-    async function removeStyle() {
-        const id = boardState.board?.settings.styleRefImageId;
-        if (id) await deleteGlobalImage(id);
-        await updateBoardSettings({ styleRefImageId: null });
-        styleStatus = "Style reference removed.";
         await tick();
-        styleUploadInput?.focus();
+        const control =
+            kind === "style"
+                ? (styleRemoveButton ?? styleUploadInput)
+                : (layoutRemoveButton ?? layoutUploadInput);
+        if (document.activeElement === document.body) control?.focus();
     }
 
-    async function removeLayout() {
-        const id = boardState.board?.settings.layoutRefImageId;
-        if (id) await deleteGlobalImage(id);
-        await updateBoardSettings({ layoutRefImageId: null });
-        layoutStatus = "Layout reference removed.";
-        await tick();
-        layoutUploadInput?.focus();
+    function uploadReference(
+        kind: "style" | "layout",
+        input: HTMLInputElement
+    ) {
+        const file = input.files?.[0];
+        input.value = "";
+        if (file) void changeReference(kind, file);
     }
 </script>
 
@@ -95,9 +73,12 @@
                     <button
                         bind:this={styleRemoveButton}
                         class="btn-icon remove-btn"
-                        onclick={removeStyle}
-                        aria-label="Remove style reference">✕</button
+                        onclick={() => changeReference("style", null)}
+                        disabled={feedback.style.busy}
+                        aria-label="Remove style reference"
                     >
+                        ✕
+                    </button>
                 {/if}
             </div>
             {#if styleRefId}
@@ -114,23 +95,25 @@
                         type="file"
                         bind:this={styleUploadInput}
                         accept="image/png,image/jpeg,image/webp"
-                        onchange={uploadStyle}
+                        onchange={(event) =>
+                            uploadReference("style", event.currentTarget)}
+                        disabled={feedback.style.busy}
                         class="sr-only"
                     />
                     <span class="upload-btn btn-ghost">
                         <span class="upload-btn__title">Upload style ref</span>
-                        <span class="upload-btn__formats"
-                            >PNG / JPEG / WebP</span
-                        >
+                        <span class="upload-btn__formats">
+                            PNG / JPEG / WebP
+                        </span>
                     </span>
                 </label>
-                {#if styleError}
-                    <p class="ref-error" role="alert">{styleError}</p>
-                {/if}
             {/if}
-            {#if styleStatus}<p class="ref-status" role="status">
-                    {styleStatus}
-                </p>{/if}
+            {#if feedback.style.error}
+                <p class="ref-error" role="alert">{feedback.style.error}</p>
+            {/if}
+            {#if feedback.style.status}
+                <p class="ref-status" role="status">{feedback.style.status}</p>
+            {/if}
         </div>
 
         <!-- Layout Reference -->
@@ -144,9 +127,12 @@
                     <button
                         bind:this={layoutRemoveButton}
                         class="btn-icon remove-btn"
-                        onclick={removeLayout}
-                        aria-label="Remove layout reference">✕</button
+                        onclick={() => changeReference("layout", null)}
+                        disabled={feedback.layout.busy}
+                        aria-label="Remove layout reference"
                     >
+                        ✕
+                    </button>
                 {/if}
             </div>
             {#if layoutRefId}
@@ -163,23 +149,25 @@
                         type="file"
                         bind:this={layoutUploadInput}
                         accept="image/png,image/jpeg,image/webp"
-                        onchange={uploadLayout}
+                        onchange={(event) =>
+                            uploadReference("layout", event.currentTarget)}
+                        disabled={feedback.layout.busy}
                         class="sr-only"
                     />
                     <span class="upload-btn btn-ghost">
                         <span class="upload-btn__title">Upload layout ref</span>
-                        <span class="upload-btn__formats"
-                            >PNG / JPEG / WebP</span
-                        >
+                        <span class="upload-btn__formats">
+                            PNG / JPEG / WebP
+                        </span>
                     </span>
                 </label>
-                {#if layoutError}
-                    <p class="ref-error" role="alert">{layoutError}</p>
-                {/if}
             {/if}
-            {#if layoutStatus}<p class="ref-status" role="status">
-                    {layoutStatus}
-                </p>{/if}
+            {#if feedback.layout.error}
+                <p class="ref-error" role="alert">{feedback.layout.error}</p>
+            {/if}
+            {#if feedback.layout.status}
+                <p class="ref-status" role="status">{feedback.layout.status}</p>
+            {/if}
         </div>
     </div>
 </section>

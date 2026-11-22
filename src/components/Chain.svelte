@@ -93,21 +93,21 @@
                     ?.name ?? chain.modelId}
             </span>
             {#if chain.forkedFrom}
-                <span class="fork-badge" title="Forked chain"
-                    >⑂ {chain.forkedFrom.kind === "initial"
+                <span class="fork-badge" title="Forked chain">
+                    ⑂ {chain.forkedFrom.kind === "initial"
                         ? "Initial fork"
                         : chain.forkedFrom.kind === "refinement"
                           ? "Refinement fork"
-                          : "Re-run fork"}</span
-                >
+                          : "Re-run fork"}
+                </span>
             {/if}
         </div>
         <div class="chain-cost">
             <span class="chain-cost-total">{formatUsd(chainTotal)}</span>
             {#if chain.chainCostCapUsd !== null}
-                <span class="chain-cost-cap"
-                    >/ {formatUsd(chain.chainCostCapUsd)}</span
-                >
+                <span class="chain-cost-cap">
+                    / {formatUsd(chain.chainCostCapUsd)}
+                </span>
             {/if}
             <label class="cap-label" title="Set chain cost cap">
                 <span class="sr-only">Chain cost cap ($)</span>
@@ -135,8 +135,8 @@
         {#each sketches as sketch, i (sketch.id)}
             {#if i > 0}
                 <div class="card-connector" aria-hidden="true">
-                    <svg width="24" height="2" aria-hidden="true"
-                        ><line
+                    <svg width="24" height="2" aria-hidden="true">
+                        <line
                             x1="0"
                             y1="1"
                             x2="24"
@@ -144,8 +144,8 @@
                             stroke="var(--clr-border)"
                             stroke-width="1.5"
                             stroke-dasharray="4 3"
-                        /></svg
-                    >
+                        />
+                    </svg>
                 </div>
             {/if}
             <div role="listitem">
@@ -164,8 +164,8 @@
         <!-- Ghost "+ Refine" card -->
         {#if canRefine && !sketches.some((s) => s.status === "draft")}
             <div class="card-connector" aria-hidden="true">
-                <svg width="24" height="2" aria-hidden="true"
-                    ><line
+                <svg width="24" height="2" aria-hidden="true">
+                    <line
                         x1="0"
                         y1="1"
                         x2="24"
@@ -173,8 +173,8 @@
                         stroke="var(--clr-border)"
                         stroke-width="1.5"
                         stroke-dasharray="4 3"
-                    /></svg
-                >
+                    />
+                </svg>
             </div>
             <div class="ghost-card-wrap" role="listitem">
                 <button

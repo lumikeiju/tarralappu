@@ -117,10 +117,9 @@
                     {tier}
                 </span>
             {/if}
-            <span class="model-price"
-                >{formatModelPricing(m.pricing, m.id) ??
-                    "pricing not listed"}</span
-            >
+            <span class="model-price">
+                {formatModelPricing(m.pricing, m.id) ?? "pricing not listed"}
+            </span>
         </label>
         <button
             type="button"
@@ -183,8 +182,9 @@
                     placeholder="Filter models…"
                     aria-label="Filter model list"
                 />
-                <button class="btn-ghost" onclick={clearSelection}>Clear</button
-                >
+                <button class="btn-ghost" onclick={clearSelection}>
+                    Clear
+                </button>
             </div>
 
             <div class="model-groups">
@@ -225,9 +225,9 @@
             {#if pinError}<p class="pin-error" role="alert">{pinError}</p>{/if}
 
             {#if boardState.modelsError}
-                <button class="btn-ghost" onclick={loadAvailableModels}
-                    >Retry loading models</button
-                >
+                <button class="btn-ghost" onclick={loadAvailableModels}>
+                    Retry loading models
+                </button>
             {/if}
 
             <div class="send-to-footer">

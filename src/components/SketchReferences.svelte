@@ -63,9 +63,9 @@
 
 {#if capabilities?.generationApi === "images" && capabilities.maxInputImages > 0}
     <details class="sketch-references">
-        <summary
-            >Subject references and edit source ({references.length})</summary
-        >
+        <summary>
+            Subject references and edit source ({references.length})
+        </summary>
         <p>
             Up to {capabilities.maxInputImages} inputs total, including previous outputs
             and checked global references. PNG, JPEG, or WebP.
@@ -95,20 +95,20 @@
                             )
                         )}
                 >
-                    <option value=""
-                        >Use previous outputs in order (legacy)</option
-                    >
+                    <option value="">
+                        Use previous outputs in order (legacy)
+                    </option>
                     {#if sketch.editSourceImageId && ![...parentImageIds, ...references].includes(sketch.editSourceImageId)}
-                        <option value={sketch.editSourceImageId}
-                            >Unavailable edit source - choose another</option
-                        >
+                        <option value={sketch.editSourceImageId}>
+                            Unavailable edit source - choose another
+                        </option>
                     {/if}
-                    {#each parentImageIds as id, index (id)}<option value={id}
-                            >Previous output {index + 1}</option
-                        >{/each}
-                    {#each references as id, index (id)}<option value={id}
-                            >Subject reference {index + 1}</option
-                        >{/each}
+                    {#each parentImageIds as id, index (id)}<option value={id}>
+                            Previous output {index + 1}
+                        </option>{/each}
+                    {#each references as id, index (id)}<option value={id}>
+                            Subject reference {index + 1}
+                        </option>{/each}
                 </select>
             </label>
             <p>
@@ -141,22 +141,25 @@
                         disabled={busy || index === 0}
                         onclick={() => move(index, -1)}
                         aria-label="Move subject reference {index + 1} earlier"
-                        >Earlier</button
                     >
+                        Earlier
+                    </button>
                     <button
                         class="btn-ghost"
                         disabled={busy || index === references.length - 1}
                         onclick={() => move(index, 1)}
                         aria-label="Move subject reference {index + 1} later"
-                        >Later</button
                     >
+                        Later
+                    </button>
                     <button
                         class="btn-ghost"
                         disabled={busy}
                         onclick={() => remove(id)}
                         aria-label="Remove subject reference {index + 1}"
-                        >Remove</button
                     >
+                        Remove
+                    </button>
                 </div>
             </div>
         {/each}
@@ -176,8 +179,9 @@
                 class="btn-ghost"
                 disabled={busy}
                 onclick={() => action(() => clearMarkup(sketch.id))}
-                >Remove saved markup</button
             >
+                Remove saved markup
+            </button>
         {/if}
         {#if busy}<p role="status">Updating references...</p>{/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}

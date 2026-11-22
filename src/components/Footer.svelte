@@ -9,10 +9,11 @@
             href="https://github.com/lumikeiju/tarralappu"
             target="_blank"
             rel="noopener noreferrer"
-            >open-source<span class="sr-only">
-                (view Tarralappu on GitHub; opens in a new tab)</span
-            ></a
         >
+            open-source<span class="sr-only">
+                (view Tarralappu on GitHub; opens in a new tab)
+            </span>
+        </a>
         and runs entirely in-browser!
     </p>
     <div class="app-footer__links">

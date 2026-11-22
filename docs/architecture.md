@@ -7,7 +7,7 @@ Current implementation, not a roadmap. Read [AGENTS.md](../AGENTS.md) for reposi
 ## System boundaries
 
 - Client-only Vite + Svelte 5 runes + strict TypeScript; Bun tooling, plain CSS, IndexedDB via `idb`. No SvelteKit, routing, SSR, or backend.
-- All generation goes directly from the browser to OpenRouter using the user's key. No direct OpenAI integration or second credential.
+- All generation goes directly from the browser to OpenRouter using the user's key. Authenticated requests reject redirects; generated media is accepted only as embedded image data, never fetched from a provider-supplied network URL. No direct OpenAI integration or second credential.
 - One board UI; deterministic rows of left-to-right refinements, not a draggable canvas. Each row locks its image model.
 - Standalone site at `lumikeiju.dev/tarralappu/`; Vite base `/tarralappu/`, build output `dist/`.
 
@@ -36,6 +36,7 @@ Current implementation, not a roadmap. Read [AGENTS.md](../AGENTS.md) for reposi
 - Creating a root draft requires a model, not a prompt; generating requires a nonempty prompt. Completed generation settings/prompts are immutable; retry uses an errored card, while reroll/refinement forks create editable rows.
 - State is hydrated from IndexedDB and mutations write through to it. Strip Svelte reactive proxies before persistence. Database `tarralappu` is version 1; optional additive fields preserve existing records without resets.
 - Forks share image IDs: copied chains/sketches and increased image refcounts commit in one transaction. Trash cancels active jobs, cascades through descendants, and releases generated/reference/markup ownership; delete blobs only at refcount zero.
+- Style and layout reference writes commit the board pointer, new blob, and released ownership together. Other board writes patch their own fields without overwriting reference pointers. Metadata backfills re-read the image before writing so they preserve newer descriptions and refcounts and cannot restore deleted images.
 - Reuse `copyGenerationSettings`, `copyRefinementSettings`, and `ownedInputImages` when adding draft/fork paths or owned assets. Completed-output refinements clear obsolete edit sources and markup.
 - Store image bytes as Blobs, not base64. Request snapshots contain effective parameters, text, and image IDs, never credentials or embedded bytes. Reconstruct images for sends; source views elide them. Revoke display object URLs when released.
 - The key is separate from persisted app settings: memory plus sessionStorage by default, localStorage only with explicit remember opt-in. Never put it in IndexedDB, snapshots, logs, or rendered source.
@@ -57,7 +58,7 @@ Current implementation, not a roadmap. Read [AGENTS.md](../AGENTS.md) for reposi
 - Conversational chat refinements resend ancestor prompts and assistant images. Non-conversational fallback sends a single image-to-image turn. Enforce input limits across the entire composed request; truncate old conversation pairs where possible, otherwise block excess explicit inputs.
 - Markup is a separate transparent PNG aligned to the base raster, never a flattened reference substitute. Edit inputs must be PNG/JPEG/WebP; GIF/SVG require explicit still extraction/rasterization that leaves originals unchanged.
 - Jobs use configurable concurrency (default 2) and abort controllers: `draft/error -> queued -> generating -> done/error`. Trashing is image-generation cancellation. Reload converts interrupted queued/generating cards to retryable errors.
-- SSE previews are transient, never persisted as results. Only completed events produce final outputs; preview-only EOF is an error. GIF/multi-output requests use buffered completion; validate incompatible format/stream/compression combinations before dispatch.
+- SSE previews are transient, never persisted as results. The dedicated Image API requires a completed image event; legacy chat streams require a successful finish reason. Preview-only EOF is an error in either path. GIF/multi-output requests use buffered completion; validate incompatible format/stream/compression combinations before dispatch.
 
 ## Media, errors, and spending
 
@@ -75,6 +76,6 @@ Current implementation, not a roadmap. Read [AGENTS.md](../AGENTS.md) for reposi
 
 ## Validation and deployment
 
-- Regression tests sit beside OpenRouter modules: [image-generation.test.ts](../src/lib/openrouter/image-generation.test.ts), [randomPrompt.test.ts](../src/lib/openrouter/randomPrompt.test.ts), [styleGuide.test.ts](../src/lib/openrouter/styleGuide.test.ts). Use targeted Bun tests while iterating; required checks are in [CONTRIBUTING.md](../CONTRIBUTING.md#before-committing).
+- Regression tests sit beside their modules, including [OpenRouter client tests](../src/lib/openrouter/client.test.ts) with mocked responses and [image persistence tests](../src/lib/db/images.test.ts) with an in-memory IndexedDB implementation. Use targeted Bun tests while iterating; required checks are in [CONTRIBUTING.md](../CONTRIBUTING.md#before-committing).
 - [CI](../.github/workflows/ci.yml) validates source on `main` and PRs without deployment. [Promotion](../.github/workflows/promote.yml) builds a beta candidate, then verifies and publishes that exact tested artifact without rebuilding.
 - `beta`/`stable` contain built files only; never merge source into them. Pages serves `stable` root. Promotion explicitly requests a Pages build because `GITHUB_TOKEN` pushes do not trigger it, and checks the built commit before creating the stable release. Release procedure: [releases](../CONTRIBUTING.md#releases).

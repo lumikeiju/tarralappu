@@ -38,10 +38,10 @@
             role="status"
             title="Some charges may be unreported. Check OpenRouter for the full cost."
         >
-            Incomplete<span class="sr-only"
-                >: some charges may be unreported. Check OpenRouter for the full
-                cost.</span
-            >
+            Incomplete<span class="sr-only">
+                : some charges may be unreported. Check OpenRouter for the full
+                cost.
+            </span>
         </span>
     {/if}
     {#if cap !== null}

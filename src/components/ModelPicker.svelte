@@ -73,14 +73,14 @@
     <div class="picker-header">
         <span id="{groupName}-label" class="picker-label">Model</span>
         {#if boardState.modelsLoading}
-            <span class="loading-hint" role="status" aria-live="polite"
-                >Loading models…</span
-            >
+            <span class="loading-hint" role="status" aria-live="polite">
+                Loading models…
+            </span>
         {:else if boardState.modelsError}
             <span class="load-error" role="alert">Could not load models.</span>
-            <button class="btn-ghost retry" onclick={loadAvailableModels}
-                >Retry</button
-            >
+            <button class="btn-ghost retry" onclick={loadAvailableModels}>
+                Retry
+            </button>
         {/if}
     </div>
 
@@ -118,9 +118,9 @@
                                 disabled={boardState.modelsLoading}
                                 onchange={() => selectModel(m.id, "pinned")}
                             />
-                            <span class="model-name" title={m.id}
-                                >{label(m)}</span
-                            >
+                            <span class="model-name" title={m.id}>
+                                {label(m)}
+                            </span>
                             {#if tier}
                                 <span
                                     class="price-tier"
@@ -130,10 +130,10 @@
                                     {tier}
                                 </span>
                             {/if}
-                            <span class="model-price"
-                                >{formatModelPricing(m.pricing, m.id) ??
-                                    "pricing not listed"}</span
-                            >
+                            <span class="model-price">
+                                {formatModelPricing(m.pricing, m.id) ??
+                                    "pricing not listed"}
+                            </span>
                         </label>
                         <button
                             type="button"
@@ -178,9 +178,9 @@
                                 disabled={boardState.modelsLoading}
                                 onchange={() => selectModel(m.id, "catalog")}
                             />
-                            <span class="model-name" title={m.id}
-                                >{label(m, group.label)}</span
-                            >
+                            <span class="model-name" title={m.id}>
+                                {label(m, group.label)}
+                            </span>
                             {#if tier}
                                 <span
                                     class="price-tier"
@@ -190,10 +190,10 @@
                                     {tier}
                                 </span>
                             {/if}
-                            <span class="model-price"
-                                >{formatModelPricing(m.pricing, m.id) ??
-                                    "pricing not listed"}</span
-                            >
+                            <span class="model-price">
+                                {formatModelPricing(m.pricing, m.id) ??
+                                    "pricing not listed"}
+                            </span>
                         </label>
                         <button
                             type="button"
@@ -205,9 +205,9 @@
                             disabled={boardState.modelsLoading}
                             onclick={() => toggleModelPin(m.id)}
                         >
-                            <span aria-hidden="true"
-                                >{isPinned(m.id) ? "★" : "☆"}</span
-                            >
+                            <span aria-hidden="true">
+                                {isPinned(m.id) ? "★" : "☆"}
+                            </span>
                         </button>
                     </div>
                 {/each}

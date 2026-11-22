@@ -51,8 +51,9 @@
             <button
                 class="btn-ghost"
                 onclick={() => void loadImageEndpoints(sketch.modelId, true)}
-                >Retry endpoint discovery</button
             >
+                Retry endpoint discovery
+            </button>
         {/if}
         {#if advanced?.complexity}
             <label>
@@ -136,8 +137,8 @@
                 provider's animation budget.
             </p>
             {#if advanced?.frameCount}
-                <label
-                    >GIF frames
+                <label>
+                    GIF frames
                     <input
                         type="number"
                         min={advanced.frameCount.min}
@@ -153,8 +154,8 @@
                 </label>
             {/if}
             {#if advanced?.frameDurationMs}
-                <label
-                    >Milliseconds per frame
+                <label>
+                    Milliseconds per frame
                     <input
                         type="number"
                         min={advanced.frameDurationMs.min}
@@ -182,8 +183,8 @@
             {/if}
         {/if}
         {#if advanced?.partialImages && sketch.streamEnabled && !animated && (sketch.outputCount ?? 1) === 1}
-            <label
-                >Partial previews
+            <label>
+                Partial previews
                 <input
                     type="number"
                     min={advanced.partialImages.min}
@@ -231,8 +232,9 @@
         <button
             class="btn-ghost"
             onclick={() => void change({ imageOptions: {} })}
-            >Reset advanced options to provider defaults</button
         >
+            Reset advanced options to provider defaults
+        </button>
     </details>
 {/if}
 {#if unknownEstimate && capabilities?.generationApi === "images"}

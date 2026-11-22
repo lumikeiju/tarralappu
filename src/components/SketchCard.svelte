@@ -284,9 +284,9 @@
             aria-live="polite"
             aria-atomic="true"
         >
-            <span class="order-badge" aria-hidden="true"
-                >#{sketch.order + 1}</span
-            >
+            <span class="order-badge" aria-hidden="true">
+                #{sketch.order + 1}
+            </span>
             {#if sketch.status === "queued"}
                 <span class="status-badge status-queued">
                     <span class="status-dot" aria-hidden="true"></span>Queued
@@ -306,8 +306,9 @@
             {/if}
         </div>
         {#if isPendingTrash}
-            <span class="status-badge pending-trash-badge">Will be deleted</span
-            >
+            <span class="status-badge pending-trash-badge">
+                Will be deleted
+            </span>
         {/if}
     </div>
 
@@ -338,8 +339,10 @@
                     randomTextGeneration.inProgress ||
                     !auth.apiKey ||
                     isPendingTrash ||
-                    randomCapReached}>Random</button
+                    randomCapReached}
             >
+                Random
+            </button>
             {#if randomizing}
                 <button
                     bind:this={cancelRandomButton}
@@ -347,8 +350,9 @@
                     type="button"
                     onclick={() => randomController?.abort()}
                     aria-label="Cancel random sketch prompt generation"
-                    >Cancel</button
                 >
+                    Cancel
+                </button>
             {/if}
         </div>
         <textarea
@@ -546,9 +550,9 @@
             </p>
         {/if}
     {/if}
-    {#if sketch.resultWarning}<Admonition type="warning"
-            >{sketch.resultWarning}</Admonition
-        >{/if}
+    {#if sketch.resultWarning}<Admonition type="warning">
+            {sketch.resultWarning}
+        </Admonition>{/if}
     {#if sketch.costUnreported}
         <Admonition type="warning">
             At least one generation attempt may have unreported charges. Totals
@@ -585,8 +589,10 @@
                         <span>Raw error response</span>
                         <button
                             class="btn-ghost copy-btn"
-                            onclick={copyErrorRaw}>Copy</button
+                            onclick={copyErrorRaw}
                         >
+                            Copy
+                        </button>
                     </div>
                     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                     <pre class="source-pre" tabindex="0"><code

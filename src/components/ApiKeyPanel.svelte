@@ -47,14 +47,16 @@
             <button
                 class="btn-ghost"
                 bind:this={changeKeyButton}
-                onclick={disconnect}>Change key</button
+                onclick={disconnect}
             >
+                Change key
+            </button>
         </div>
     {:else}
         <form onsubmit={submit} class="key-form">
-            <label for="api-key-input" class="key-label"
-                >OpenRouter API key</label
-            >
+            <label for="api-key-input" class="key-label">
+                OpenRouter API key
+            </label>
             <div class="key-row">
                 <div class="key-input-wrap">
                     <input
@@ -72,8 +74,10 @@
                         class="btn-icon show-toggle"
                         onclick={() => (showKey = !showKey)}
                         aria-label="Show key"
-                        aria-pressed={showKey}>{showKey ? "🙈" : "👁"}</button
+                        aria-pressed={showKey}
                     >
+                        {showKey ? "🙈" : "👁"}
+                    </button>
                 </div>
                 <button
                     type="submit"
@@ -109,8 +113,8 @@
                     rel="noopener noreferrer"
                 >
                     View source code on GitHub!<span class="sr-only">
-                        (opens in a new tab)</span
-                    >
+                        (opens in a new tab)
+                    </span>
                 </a>
             </p>
         </form>

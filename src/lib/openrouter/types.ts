@@ -295,6 +295,7 @@ export interface CompletionChunkChoice {
   index: number;
   delta: CompletionChunkDelta;
   finish_reason: string | null;
+  error?: OpenRouterErrorDetail;
 }
 
 export interface CompletionChunk {

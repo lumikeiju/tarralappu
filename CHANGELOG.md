@@ -4,6 +4,25 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · [Semantic Versioning](https://semver.org/) · [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v2.2.0 (2026-11-22)
+
+### Fixed
+
+- Made Style and Layout reference changes atomic with their stored images. Failed writes retain the previous reference, and upload and removal errors are announced in the affected slot.
+- Preserved image descriptions and ownership when older images gain preview metadata, without restoring images deleted during decoding.
+- Required a completion signal before saving streamed outputs. Interrupted legacy streams retain reported billing details without saving partial previews.
+- Preserved billing details for top-level provider errors returned with HTTP 200.
+
+### Security
+
+- Limited provider previews and results to embedded image data, so image URLs supplied by a provider cannot trigger external requests.
+- Disabled redirect following for authenticated OpenRouter requests to prevent forwarding generation payloads.
+- Updated Svelte and audited the Bun dependency tree; no known advisories were reported.
+
+### Changed
+
+- Added regression coverage for streaming, response validation, and IndexedDB transactions. Clarified the persistence and network boundaries and the Bun-only release workflow.
+
 ## v2.1.0 (2026-11-08)
 
 ### Changed
