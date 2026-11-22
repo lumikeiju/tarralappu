@@ -22,7 +22,7 @@
     "@tsconfig/svelte": "^5.0.9",
     "@types/bun": "^1.4.4",
     "prettier": "^3.10.1",
-    "prettier-plugin-svelte": "^4.1.1",
+    "prettier-plugin-svelte": "^4.2.0",
     "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",
     "vite": "^8.3.8"
