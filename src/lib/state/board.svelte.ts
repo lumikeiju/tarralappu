@@ -1,5 +1,6 @@
 import {
   getBoard,
+  patchBoard,
   saveBoard,
   getChainsForBoard,
   saveChain,
@@ -14,7 +15,8 @@ import {
   getDisplayImage,
   validateImageFile,
   blobToBase64,
-  dataUrlToBlob
+  writeGlobalReference,
+  type GlobalReferenceSlot
 } from "../db/images";
 import {
   DEFAULT_BOARD_ID,
@@ -82,7 +84,7 @@ import {
   copyRefinementSettings,
   ownedInputImages
 } from "../openrouter/options";
-import { rasterizeImage, validateMarkup } from "../db/media";
+import { embeddedImageBlob, rasterizeImage, validateMarkup } from "../db/media";
 import { Queue } from "../queue/queue";
 import { settings, auth } from "./settings.svelte";
 
@@ -300,11 +302,26 @@ export async function loadAvailableModels(): Promise<void> {
 // ── Board settings mutations ─────────────────────────────────────────────────
 
 export async function updateBoardSettings(
-  updates: Partial<BoardSettings>
+  updates: Partial<Omit<BoardSettings, GlobalReferenceSlot>>
 ): Promise<void> {
   if (!boardState.board) return;
   Object.assign(boardState.board.settings, updates);
-  await saveBoard(JSON.parse(JSON.stringify(boardState.board)));
+  await persistBoardSettings(updates);
+}
+
+function persistBoardSettings(updates: Partial<BoardSettings>): Promise<void> {
+  return patchBoard(DEFAULT_BOARD_ID, {
+    settings: JSON.parse(JSON.stringify(updates))
+  });
+}
+
+export async function updateGlobalReference(
+  slot: GlobalReferenceSlot,
+  file: File | null
+): Promise<void> {
+  const board = boardState.board;
+  if (!board) throw new Error("The board is no longer available.");
+  board.settings[slot] = await writeGlobalReference(board.id, slot, file);
 }
 
 type RandomTextOptions = {
@@ -380,12 +397,9 @@ async function generateRandomText(
       credential,
       options.signal
     );
-    if (costUsd === null) {
-      currentBoard[unknownCostKey] = (currentBoard[unknownCostKey] ?? 0) + 1;
-    } else {
-      currentBoard[costKey] = (currentBoard[costKey] ?? 0) + costUsd;
-    }
-    await saveBoard(JSON.parse(JSON.stringify(currentBoard)));
+    const field = costUsd === null ? unknownCostKey : costKey;
+    currentBoard[field] = (currentBoard[field] ?? 0) + (costUsd ?? 1);
+    await patchBoard(currentBoard.id, { [field]: currentBoard[field] });
     costRecorded = true;
     return costUsd;
   }
@@ -478,7 +492,7 @@ async function generateRandomText(
         error instanceof SyntaxError)
     ) {
       board[unknownCostKey] = (board[unknownCostKey] ?? 0) + 1;
-      await saveBoard(JSON.parse(JSON.stringify(board)));
+      await patchBoard(board.id, { [unknownCostKey]: board[unknownCostKey] });
     }
     throw error;
   } finally {
@@ -514,7 +528,7 @@ export async function addPromptNote(): Promise<void> {
   if (!board) return;
   if (!board.settings.promptNotes) board.settings.promptNotes = [];
   board.settings.promptNotes.push({ id: newId(), name: "", text: "" });
-  await saveBoard(JSON.parse(JSON.stringify(board)));
+  await persistBoardSettings({ promptNotes: board.settings.promptNotes });
 }
 
 export async function updatePromptNote(
@@ -526,7 +540,7 @@ export async function updatePromptNote(
   const note = board.settings.promptNotes?.find((n) => n.id === id);
   if (!note) return;
   Object.assign(note, updates);
-  await saveBoard(JSON.parse(JSON.stringify(board)));
+  await persistBoardSettings({ promptNotes: board.settings.promptNotes });
 }
 
 export async function removePromptNote(id: ID): Promise<void> {
@@ -535,7 +549,7 @@ export async function removePromptNote(id: ID): Promise<void> {
   board.settings.promptNotes = (board.settings.promptNotes ?? []).filter(
     (n) => n.id !== id
   );
-  await saveBoard(JSON.parse(JSON.stringify(board)));
+  await persistBoardSettings({ promptNotes: board.settings.promptNotes });
 }
 
 export async function togglePinnedModel(modelId: string): Promise<void> {
@@ -545,7 +559,7 @@ export async function togglePinnedModel(modelId: string): Promise<void> {
   board.settings.pinnedModelIds = pinnedModelIds.includes(modelId)
     ? pinnedModelIds.filter((id) => id !== modelId)
     : [...pinnedModelIds, modelId];
-  await saveBoard(JSON.parse(JSON.stringify(board)));
+  await persistBoardSettings({ pinnedModelIds: board.settings.pinnedModelIds });
 }
 
 /**
@@ -1135,8 +1149,7 @@ async function runGeneration(
       } as Record<string, string>
     )[sketch.outputFormat ?? ""];
     for (const imgItem of response.choices[0].message.images) {
-      const dataUrl = imgItem.image_url.url;
-      const blob = await dataUrlToBlob(dataUrl);
+      const blob = await embeddedImageBlob(imgItem?.image_url?.url);
       const stored = await storeImageBlob(blob, "generated");
       stagedImageIds.push(stored.id);
       if (expectedMime && stored.mime !== expectedMime)

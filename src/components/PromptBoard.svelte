@@ -313,8 +313,10 @@
                         generatingNoteId !== null ||
                         randomTextGeneration.inProgress ||
                         !auth.apiKey ||
-                        capReached}>Random</button
+                        capReached}
                 >
+                    Random
+                </button>
                 {#if generatingNoteId === note.id}
                     <button
                         bind:this={cancelButton}
@@ -322,8 +324,9 @@
                         type="button"
                         onclick={() => controller?.abort()}
                         aria-label="Cancel random prompt generation"
-                        >Cancel</button
                     >
+                        Cancel
+                    </button>
                 {/if}
                 <button
                     class="btn-icon"
@@ -359,9 +362,9 @@
                     ✕
                 </button>
             </div>
-            <label class="sr-only" for="prompt-note-name-{note.id}"
-                >Prompt note name</label
-            >
+            <label class="sr-only" for="prompt-note-name-{note.id}">
+                Prompt note name
+            </label>
             <input
                 class="prompt-note__name"
                 id="prompt-note-name-{note.id}"
@@ -376,9 +379,9 @@
                 type="text"
                 disabled={sendingPrompts || generatingNoteId === note.id}
             />
-            <label class="sr-only" for="prompt-note-{note.id}"
-                >Prompt note text</label
-            >
+            <label class="sr-only" for="prompt-note-{note.id}">
+                Prompt note text
+            </label>
             <textarea
                 id="prompt-note-{note.id}"
                 value={note.text}

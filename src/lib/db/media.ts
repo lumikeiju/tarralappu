@@ -7,6 +7,20 @@ export interface MediaInfo {
   poster?: Blob;
 }
 
+export function isEmbeddedImageUrl(url: unknown): url is string {
+  return (
+    typeof url === "string" &&
+    /^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,.+/i.test(url)
+  );
+}
+
+export async function embeddedImageBlob(url: unknown): Promise<Blob> {
+  if (!isEmbeddedImageUrl(url))
+    throw new Error("OpenRouter returned an image without embedded data.");
+  const response = await fetch(url);
+  return response.blob();
+}
+
 export function identifyImage(bytes: Uint8Array): string {
   const starts = (...prefix: number[]) =>
     prefix.every((value, index) => bytes[index] === value);

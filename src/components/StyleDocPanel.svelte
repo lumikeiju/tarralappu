@@ -113,15 +113,18 @@
                 onclick={randomize}
                 aria-describedby="style-doc-random-hint"
                 title="Generate a random style guide with DeepSeek Flash via OpenRouter (uses API credits)"
-                >Random</button
             >
+                Random
+            </button>
             {#if generating}
                 <button
                     bind:this={cancelButton}
                     type="button"
                     class="btn-ghost"
-                    onclick={() => controller?.abort()}>Cancel</button
+                    onclick={() => controller?.abort()}
                 >
+                    Cancel
+                </button>
             {/if}
         </div>
     </div>

@@ -47,9 +47,9 @@
         <ModelPicker value={modelId} onSelect={(id) => (modelId = id)} />
     </div>
 
-    <label for="root-prompt" class="composer__prompt-label"
-        >Prompt (optional)</label
-    >
+    <label for="root-prompt" class="composer__prompt-label">
+        Prompt (optional)
+    </label>
     <textarea
         id="root-prompt"
         bind:this={promptInput}
@@ -65,9 +65,9 @@
         >
             {submitting ? "Creating…" : "Create Draft"}
         </button>
-        <button type="button" class="btn-ghost" onclick={() => onClose()}
-            >Cancel</button
-        >
+        <button type="button" class="btn-ghost" onclick={() => onClose()}>
+            Cancel
+        </button>
     </div>
 </form>
 

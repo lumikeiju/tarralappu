@@ -1,5 +1,12 @@
 import { getDB } from "./schema";
-import type { Board, Chain, Sketch, AppSettings, ID } from "./schema";
+import type {
+  Board,
+  BoardSettings,
+  Chain,
+  Sketch,
+  AppSettings,
+  ID
+} from "./schema";
 
 // --- Board ---
 export async function getBoard(id: ID): Promise<Board | undefined> {
@@ -7,6 +14,26 @@ export async function getBoard(id: ID): Promise<Board | undefined> {
 }
 export async function saveBoard(board: Board): Promise<void> {
   await (await getDB()).put("boards", board);
+}
+
+export async function patchBoard(
+  id: ID,
+  updates: Partial<Omit<Board, "id" | "settings">> & {
+    settings?: Partial<BoardSettings>;
+  }
+): Promise<void> {
+  const { settings, ...fields } = structuredClone(updates);
+  const tx = (await getDB()).transaction("boards", "readwrite");
+  const board = await tx.store.get(id);
+  if (!board) throw new Error("The board is no longer available.");
+  await Promise.all([
+    tx.store.put({
+      ...board,
+      ...fields,
+      settings: { ...board.settings, ...settings }
+    }),
+    tx.done
+  ]);
 }
 
 // --- Chains ---

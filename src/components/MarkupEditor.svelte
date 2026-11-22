@@ -219,8 +219,8 @@
         {#each shapes as shape, index (index)}
             <fieldset>
                 <legend>Annotation {index + 1}</legend>
-                <label
-                    >Shape <select
+                <label>
+                    Shape <select
                         value={shape.kind}
                         onchange={(event) => {
                             const next = copy(shapes);
@@ -233,14 +233,17 @@
                                       : "circle";
                             change(next);
                         }}
-                        ><option value="circle">Circle</option><option
-                            value="rectangle">Rectangle</option
-                        ><option value="arrow">Arrow</option></select
-                    ></label
-                >
+                    >
+                        <option value="circle">Circle</option><option
+                            value="rectangle"
+                        >
+                            Rectangle
+                        </option><option value="arrow">Arrow</option>
+                    </select>
+                </label>
                 {#each ["x", "y", "width", "height"] as key}
-                    <label
-                        >{key}<input
+                    <label>
+                        {key}<input
                             type="number"
                             min={key === "x" || key === "y" ? 0 : 1}
                             step="1"
@@ -251,15 +254,15 @@
                                     key as keyof Omit<Shape, "kind">,
                                     event.currentTarget.value
                                 )}
-                        /></label
-                    >
+                        />
+                    </label>
                 {/each}
             </fieldset>
         {/each}
         <div class="actions">
-            <button class="btn-ghost" disabled={busy} onclick={add}
-                >Add annotation</button
-            >
+            <button class="btn-ghost" disabled={busy} onclick={add}>
+                Add annotation
+            </button>
             <button
                 class="btn-ghost"
                 disabled={busy || !undo.length}
@@ -267,8 +270,10 @@
                     redo = [...redo, copy(shapes)];
                     shapes = undo.at(-1)!;
                     undo = undo.slice(0, -1);
-                }}>Undo</button
+                }}
             >
+                Undo
+            </button>
             <button
                 class="btn-ghost"
                 disabled={busy || !redo.length}
@@ -276,27 +281,33 @@
                     undo = [...undo, copy(shapes)];
                     shapes = redo.at(-1)!;
                     redo = redo.slice(0, -1);
-                }}>Redo</button
+                }}
             >
+                Redo
+            </button>
             <button
                 class="btn-ghost"
                 disabled={busy || !shapes.length}
-                onclick={() => change([])}>Clear annotations</button
+                onclick={() => change([])}
             >
+                Clear annotations
+            </button>
             <button
                 class="btn-ghost"
                 disabled={busy || !shapes.length}
-                onclick={save}>Save transparent markup</button
+                onclick={save}
             >
+                Save transparent markup
+            </button>
         </div>
-        <label
-            >Upload matching transparent PNG<input
+        <label>
+            Upload matching transparent PNG<input
                 type="file"
                 accept="image/png"
                 onchange={upload}
                 disabled={busy}
-            /></label
-        >
+            />
+        </label>
     {:else}
         <p>Select a primary raster edit source before adding markup.</p>
     {/if}
@@ -310,8 +321,9 @@
             class="btn-ghost"
             disabled={busy}
             onclick={() => action(() => clearMarkup(sketch.id))}
-            >Remove saved markup</button
         >
+            Remove saved markup
+        </button>
     {/if}
     {#if busy}<p role="status">Validating markup...</p>{/if}
     {#if status}<p role="status">{status}</p>{/if}

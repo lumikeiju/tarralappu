@@ -260,9 +260,9 @@
                 >
                     <option value="">Provider default</option>
                     {#if outputFormat && !outputFormats.includes(outputFormat)}
-                        <option value={outputFormat}
-                            >Unavailable ({outputFormat}) - choose another</option
-                        >
+                        <option value={outputFormat}>
+                            Unavailable ({outputFormat}) - choose another
+                        </option>
                     {/if}
                     {#each outputFormats as format (format)}
                         <option value={format}>{format}</option>
@@ -288,9 +288,9 @@
                     disabled={outputFormat !== "jpeg" &&
                         outputFormat !== "webp"}
                 />
-                <span class="range-hint"
-                    >{compressionRange.min}–{compressionRange.max}</span
-                >
+                <span class="range-hint">
+                    {compressionRange.min}–{compressionRange.max}
+                </span>
             </label>
         {/if}
 

@@ -7,11 +7,11 @@ Read [AGENTS.md](AGENTS.md) for conventions and [architecture](docs/architecture
 ## Local setup
 
 ```bash
-bun install
+bun install --frozen-lockfile
 bun dev
 ```
 
-Open <http://localhost:5173/tarralappu/>. Enter your OpenRouter API key in the app; never commit it.
+Use the Bun version pinned in [package.json](package.json) and commit only [bun.lock](bun.lock) for dependency resolution. Open <http://localhost:5173/tarralappu/>. Enter your OpenRouter API key in the app; never commit it.
 
 ## Before committing
 
@@ -19,9 +19,10 @@ Open <http://localhost:5173/tarralappu/>. Enter your OpenRouter API key in the a
 bun format
 bun test
 bun run build
+bun audit
 ```
 
-Build includes type checking and must report 0 errors/warnings; `bun check` runs the checker alone. Keep PRs focused; describe behavior changes, validation, and documentation impact. CI also checks formatting with `bun format:check`.
+Build includes type checking and must report 0 errors/warnings; `bun check` runs the checker alone. Review any dependency advisories before release. Keep PRs focused; describe behavior changes, validation, and documentation impact. CI also checks formatting with `bun format:check`.
 
 ## Releases
 

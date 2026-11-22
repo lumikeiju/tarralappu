@@ -174,10 +174,10 @@
     <!-- Draft roots and completed/refinement cards can branch. -->
     {#if canForkInitialRuns || canForkRefinements}
         <span class="fork-controls">
-            <label class="sr-only" for="fork-count-{sketch.id}"
-                >Number of {canForkInitialRuns ? "initial-run" : "refinement"}
-                forks</label
-            >
+            <label class="sr-only" for="fork-count-{sketch.id}">
+                Number of {canForkInitialRuns ? "initial-run" : "refinement"}
+                forks
+            </label>
             <select
                 class="fork-count"
                 id="fork-count-{sketch.id}"
@@ -279,14 +279,17 @@
                 class="btn-danger confirm-btn"
                 onclick={onTrashConfirm}
                 disabled={busy}
-                >Delete {pendingTrashCount}
-                {pendingTrashCount === 1 ? "card" : "cards"}</button
             >
+                Delete {pendingTrashCount}
+                {pendingTrashCount === 1 ? "card" : "cards"}
+            </button>
             <button
                 class="btn-ghost"
                 bind:this={cancelTrashBtn}
-                onclick={cancelTrash}>Cancel</button
+                onclick={cancelTrash}
             >
+                Cancel
+            </button>
         </span>
     {/if}
 </div>
@@ -303,13 +306,16 @@
     <div class="source-panel" role="region" aria-label="Request source">
         <div class="source-header">
             <span>Request (image data elided, key redacted)</span>
-            <button class="btn-ghost copy-btn" onclick={copySource}>Copy</button
-            >
+            <button class="btn-ghost copy-btn" onclick={copySource}>
+                Copy
+            </button>
             <button
                 class="btn-icon"
                 onclick={closeSource}
-                aria-label="Close request source">✕</button
+                aria-label="Close request source"
             >
+                ✕
+            </button>
         </div>
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <pre class="source-pre" tabindex="0"><code>{sourceJson}</code></pre>

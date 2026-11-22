@@ -14,6 +14,8 @@ import type {
   OpenRouterErrorDetail,
   OpenRouterErrorMetadata
 } from "./types";
+import { isEmbeddedImageUrl } from "../db/media";
+import { readServerEvents } from "./sse";
 
 const BASE = "https://openrouter.ai/api/v1";
 const SITE_URL = "https://lumikeiju.dev/tarralappu/";
@@ -197,6 +199,7 @@ export async function chatCompletion(
 ): Promise<CompletionResponse> {
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
+    redirect: "error",
     signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -211,15 +214,18 @@ export async function chatCompletion(
     throw await apiErrorFromResponse(res);
   }
 
-  const json = (await res.json()) as CompletionResponse;
+  const json = (await res.json()) as CompletionResponse & OpenRouterErrorBody;
 
   // Request-level errors return a non-2xx status (handled above). Errors
   // that occur while the model is producing output still return HTTP 200,
-  // with the error embedded in the response body instead. See
+  // with a top-level or choice error embedded in the response body instead. See
   // https://openrouter.ai/docs/api/reference/errors-and-debugging
-  const choiceError = json.choices?.[0]?.error;
+  const choiceError = json.error ?? json.choices?.[0]?.error;
   if (choiceError) {
-    throw apiErrorFromChoiceError(choiceError, json, json);
+    throw apiErrorFromChoiceError(choiceError, json, {
+      id: json.id || res.headers.get("X-Generation-Id") || "",
+      usage: json.usage
+    });
   }
 
   return json;
@@ -254,6 +260,7 @@ export async function chatCompletionStream(
 ): Promise<CompletionResponse> {
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
+    redirect: "error",
     signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -267,14 +274,10 @@ export async function chatCompletionStream(
   if (!res.ok) {
     throw await apiErrorFromResponse(res);
   }
-  if (!res.body) {
-    throw new Error("Streaming response has no body");
-  }
+  let id = res.headers.get("X-Generation-Id") ?? "";
+  if (!res.body)
+    throw new ImageResponseError("Streaming response has no body.", id);
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let id = "";
   let content = "";
   const images: CompletionImageItem[] = [];
   let finishReason: string | null = null;
@@ -282,46 +285,52 @@ export async function chatCompletionStream(
   let midStreamError: OpenRouterErrorDetail | null = null;
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    await readServerEvents(res.body, (data) => {
+      const chunk = JSON.parse(data) as CompletionChunk;
+      if (!chunk || typeof chunk !== "object" || Array.isArray(chunk))
+        throw new Error("Invalid chat stream record.");
+      if (chunk.id) id = chunk.id;
+      if (chunk.usage) usage = chunk.usage;
+      if (chunk.error) midStreamError = chunk.error;
 
-      let lineEnd: number;
-      while ((lineEnd = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, lineEnd).trim();
-        buffer = buffer.slice(lineEnd + 1);
-        // Blank lines separate SSE events; lines starting with ":" are
-        // keepalive comments (e.g. "OPENROUTER PROCESSING") — both ignored.
-        if (!line || line.startsWith(":") || !line.startsWith("data: ")) {
-          continue;
-        }
-        const data = line.slice("data: ".length);
-        if (data === "[DONE]") continue;
-
-        let chunk: CompletionChunk;
-        try {
-          chunk = JSON.parse(data) as CompletionChunk;
-        } catch {
-          continue; // malformed/partial chunk — skip rather than crash
-        }
-
-        if (chunk.id) id = chunk.id;
-        if (chunk.usage) usage = chunk.usage;
-        if (chunk.error) midStreamError = chunk.error;
-
-        const choice = chunk.choices?.[0];
-        if (choice?.delta?.content) content += choice.delta.content;
-        if (choice?.delta?.images?.length) {
-          choice.delta.images.forEach((img, i) => (images[i] = img));
-          callbacks.onImages?.([...images]);
-        }
-        if (choice?.finish_reason) finishReason = choice.finish_reason;
+      const choice = chunk.choices?.[0];
+      if (choice?.error) midStreamError = choice.error;
+      if (choice?.delta?.content) content += choice.delta.content;
+      if (choice?.delta?.images?.length) {
+        choice.delta.images.forEach((image, index) => (images[index] = image));
+        callbacks.onImages?.(
+          images.filter((image) => isEmbeddedImageUrl(image?.image_url?.url))
+        );
       }
-    }
-  } finally {
-    reader.releaseLock();
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+    });
+  } catch (error) {
+    if (
+      signal?.aborted ||
+      (error instanceof DOMException && error.name === "AbortError")
+    )
+      throw new DOMException("Generation cancelled", "AbortError");
+    throw new ImageResponseError(
+      "OpenRouter returned an invalid or interrupted chat stream.",
+      id,
+      usage,
+      error
+    );
   }
+
+  signal?.throwIfAborted();
+  if (midStreamError)
+    throw apiErrorFromChoiceError(
+      midStreamError,
+      { id, usage, error: midStreamError },
+      { id, usage }
+    );
+  if (finishReason !== "stop")
+    throw new ImageResponseError(
+      "Chat stream ended without a completed result. Partial previews were not saved.",
+      id,
+      usage
+    );
 
   const response: CompletionResponse = {
     id,
@@ -334,10 +343,6 @@ export async function chatCompletionStream(
     ],
     usage
   };
-
-  if (midStreamError) {
-    throw apiErrorFromChoiceError(midStreamError, response, response);
-  }
 
   return response;
 }
@@ -410,6 +415,7 @@ export async function imageGeneration(
 ): Promise<CompletionResponse> {
   const res = await fetch(`${BASE}/images`, {
     method: "POST",
+    redirect: "error",
     signal,
     headers: imageRequestHeaders(apiKey),
     body: JSON.stringify(body)
@@ -456,6 +462,7 @@ export async function imageGenerationStream(
 ): Promise<CompletionResponse> {
   const res = await fetch(`${BASE}/images`, {
     method: "POST",
+    redirect: "error",
     signal,
     headers: imageRequestHeaders(apiKey),
     body: JSON.stringify(body)
@@ -468,19 +475,13 @@ export async function imageGenerationStream(
       res.headers.get("X-Generation-Id") ?? ""
     );
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let finalData: ImageGenerationResponseData[] | null = null;
   let usage: CompletionUsage | undefined;
   let streamError: OpenRouterErrorDetail | null = null;
   let generationId = res.headers.get("X-Generation-Id") ?? "";
   let metadata: CompletionResponse["imageMetadata"];
-  let eventLines: string[] = [];
 
   function handleEvent(data: string): void {
-    if (!data || data === "[DONE]") return;
-
     let event: {
       type?: string;
       id?: string;
@@ -500,15 +501,13 @@ export async function imageGenerationStream(
       return;
     }
 
-    if (event.type === "image_generation.partial_image" && event.b64_json) {
-      callbacks.onImages?.([
-        {
-          type: "image_url",
-          image_url: {
-            url: imageDataUrl(event.b64_json, event.media_type)
-          }
-        }
-      ]);
+    if (
+      event.type === "image_generation.partial_image" &&
+      typeof event.b64_json === "string"
+    ) {
+      const url = imageDataUrl(event.b64_json, event.media_type);
+      if (isEmbeddedImageUrl(url))
+        callbacks.onImages?.([{ type: "image_url", image_url: { url } }]);
     }
     if (event.type === "image_generation.completed") {
       finalData =
@@ -526,29 +525,8 @@ export async function imageGenerationStream(
     }
   }
 
-  function handleLine(line: string): void {
-    if (!line) {
-      if (eventLines.length) handleEvent(eventLines.join("\n"));
-      eventLines = [];
-    } else if (line.startsWith("data:")) {
-      eventLines.push(line.slice(5).replace(/^ /, ""));
-    }
-  }
-
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let lineEnd: number;
-      while ((lineEnd = buffer.indexOf("\n")) !== -1) {
-        handleLine(buffer.slice(0, lineEnd).replace(/\r$/, ""));
-        buffer = buffer.slice(lineEnd + 1);
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer) handleLine(buffer.replace(/\r$/, ""));
-    handleLine("");
+    await readServerEvents(res.body, handleEvent);
   } catch (error) {
     if (signal?.aborted)
       throw new DOMException("Generation cancelled", "AbortError");
@@ -560,8 +538,6 @@ export async function imageGenerationStream(
       usage,
       error
     );
-  } finally {
-    reader.releaseLock();
   }
 
   if (streamError)
@@ -598,6 +574,7 @@ export async function fetchGenerationCost(
       `${BASE}/generation?id=${encodeURIComponent(generationId)}`,
       {
         signal,
+        redirect: "error",
         headers: { Authorization: `Bearer ${apiKey}` }
       }
     );
@@ -692,9 +669,10 @@ function statusFallbackMessage(status: number, message: string): string {
 /** Map an error to a pretty, human-readable message. */
 export function humanizeError(err: unknown): string {
   if (err instanceof OpenRouterApiError) {
-    const known = err.errorType
-      ? ERROR_TYPE_MESSAGES[err.errorType]
-      : undefined;
+    const known =
+      err.errorType && Object.hasOwn(ERROR_TYPE_MESSAGES, err.errorType)
+        ? ERROR_TYPE_MESSAGES[err.errorType]
+        : undefined;
     const message = known ?? statusFallbackMessage(err.status, err.message);
     return err.retryAfterSeconds
       ? `${message} Retry after ~${err.retryAfterSeconds}s.`
